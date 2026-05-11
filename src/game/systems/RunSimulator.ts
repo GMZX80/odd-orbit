@@ -53,7 +53,7 @@ export class RunSimulator {
 
     const spawns: SpawnSpec[] = [];
     if (this.spawnTimer <= 0) {
-      this.spawnTimer = this.rng.next() < 0.22 ? 0.32 : this.rng.int(48, 76) / 100;
+      this.spawnTimer = this.rng.next() < 0.26 ? 0.34 : this.rng.int(52, 84) / 100;
       spawns.push(...this.createSpawnWave());
     }
 
@@ -152,7 +152,12 @@ export class RunSimulator {
     }
 
     if (roll < 0.62) {
-      return [this.spawn("hazard", lane, "JUNK")];
+      const lanes = new Set([lane, this.rng.int(0, this.laneCount - 1), this.rng.int(0, this.laneCount - 1)]);
+      return [...lanes].map((hazardLane, index) => {
+        const hazard = this.spawn("hazard", hazardLane, "JUNK");
+        hazard.y -= index * 38;
+        return hazard;
+      });
     }
 
     if (roll < 0.76) {
@@ -174,8 +179,8 @@ export class RunSimulator {
       id: `${kind}-${this.nextId++}`,
       kind,
       lane,
-      y: -64,
-      speed: this.cursed ? 214 : 188,
+      y: 92,
+      speed: this.cursed ? 230 : 196,
       label,
       gateEffect
     };
