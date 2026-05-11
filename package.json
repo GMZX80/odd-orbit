@@ -1,0 +1,21 @@
+{
+  "name": "odd-orbit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mobile-first 2D comedy space exploration runner built with Phaser, TypeScript, and Vite.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "rollup": "npm:@rollup/wasm-node@^4.60.3",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12"
+  }
+}
