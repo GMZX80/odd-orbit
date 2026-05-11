@@ -4,15 +4,9 @@ import type { StorageAdapter } from "./localStorageAdapter";
 export interface PlayerProfile {
   id: string;
   displayName: string;
-  coins: number;
+  bestUnits: number;
   totalRuns: number;
   successfulRuns: number;
-  artefacts: string[];
-  ship: {
-    name: string;
-    hullLevel: number;
-    fuelLevel: number;
-  };
   settings: {
     reducedMotion: boolean;
   };
@@ -21,15 +15,9 @@ export interface PlayerProfile {
 const defaultProfile: PlayerProfile = {
   id: "local-captain",
   displayName: "Captain Maybe",
-  coins: 0,
+  bestUnits: 1,
   totalRuns: 0,
   successfulRuns: 0,
-  artefacts: [],
-  ship: {
-    name: "S.S. Questionable",
-    hullLevel: 1,
-    fuelLevel: 1
-  },
   settings: {
     reducedMotion: false
   }
@@ -51,13 +39,11 @@ export function createUserDataService(storage: StorageAdapter): UserDataService 
 
     async applyRunResult(userId: string, result: RunResult) {
       const profile = await this.getProfile(userId);
-      const artefacts = new Set([...profile.artefacts, ...result.artefacts]);
       const next: PlayerProfile = {
         ...profile,
-        coins: profile.coins + result.coins,
+        bestUnits: Math.max(profile.bestUnits, result.units),
         totalRuns: profile.totalRuns + 1,
-        successfulRuns: profile.successfulRuns + (result.status === "arrived" ? 1 : 0),
-        artefacts: [...artefacts]
+        successfulRuns: profile.successfulRuns + (result.status === "complete" ? 1 : 0)
       };
       storage.write(key, next);
       return next;

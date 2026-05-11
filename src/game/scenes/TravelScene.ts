@@ -1,25 +1,23 @@
 import Phaser from "phaser";
+import { ParallaxSpaceScene } from "../background/ParallaxSpaceScene";
+import { Bullet } from "../entities/Bullet";
+import { EnemySphere } from "../entities/EnemySphere";
+import { EnemySwarmSpawner } from "../entities/EnemySwarmSpawner";
+import { NumberCard } from "../entities/NumberCard";
+import { PlayerSwarm } from "../entities/PlayerSwarm";
 import { gameEvents } from "../events";
-import { RunSimulator } from "../systems/RunSimulator";
-import type { RunResult, SpawnSpec } from "../systems/runTypes";
+import { generateBalancedCard } from "../systems/cardBalancing";
+import type { RunResult } from "../systems/runTypes";
 
 interface TravelSceneData {
-  destination: string;
-  seed: number;
   idle?: boolean;
 }
 
-interface ActiveEntity {
-  spec: SpawnSpec;
-  body: Phaser.GameObjects.Container;
-}
-
-interface ActiveBolt {
-  body: Phaser.GameObjects.Container;
-  lane: number;
-  y: number;
-}
-
+const laneCount = 3;
+const centerLane = 1;
+const cardLane = 2;
+const maxVisibleEnemies = 120;
+const runDistanceGoal = 1500;
 const road = {
   horizonY: 82,
   bottomY: 720,
@@ -29,27 +27,19 @@ const road = {
   playerY: 628
 };
 
-const colors = {
-  coin: 0xffdf62,
-  fuel: 0x66f2a8,
-  hazard: 0xff5f7a,
-  npc: 0x7ee4ff,
-  artefact: 0xd79cff,
-  gateGood: 0x66f2a8,
-  gateBad: 0xff8a65
-};
-
 export class TravelScene extends Phaser.Scene {
-  private simulator?: RunSimulator;
-  private player?: Phaser.GameObjects.Container;
-  private activeEntities: ActiveEntity[] = [];
-  private activeBolts: ActiveBolt[] = [];
-  private selectedLane = 2;
-  private roadOffset = 0;
-  private fireTimer = 0;
+  private player?: PlayerSwarm;
+  private cards: NumberCard[] = [];
+  private enemies: EnemySphere[] = [];
+  private bullets: Bullet[] = [];
+  private enemySpawner?: EnemySwarmSpawner;
+  private selectedLane = centerLane;
+  private cardSpawnTimer = 1.1;
+  private distance = 0;
   private idle = true;
   private ending = false;
   private distanceText?: Phaser.GameObjects.Text;
+  private spaceScene?: ParallaxSpaceScene;
 
   constructor() {
     super("TravelScene");
@@ -58,156 +48,76 @@ export class TravelScene extends Phaser.Scene {
   create(data: TravelSceneData) {
     this.idle = Boolean(data.idle);
     this.ending = false;
-    this.activeEntities.forEach((entity) => entity.body.destroy());
-    this.activeEntities = [];
-    this.activeBolts.forEach((bolt) => bolt.body.destroy());
-    this.activeBolts = [];
-    this.selectedLane = 2;
-    this.fireTimer = 0;
-    this.simulator = new RunSimulator({
-      destination: data.destination,
-      seed: data.seed
-    });
+    this.selectedLane = centerLane;
+    this.cardSpawnTimer = 1.1;
+    this.distance = 0;
+    this.cards.forEach((card) => card.destroy());
+    this.enemies.forEach((enemy) => enemy.destroy());
+    this.bullets.forEach((bullet) => bullet.destroy());
+    this.spaceScene?.destroy();
+    this.cards = [];
+    this.enemies = [];
+    this.bullets = [];
 
-    this.createRunnerBackdrop();
-    this.createRoad();
-    this.createPlayer();
+    this.spaceScene = new ParallaxSpaceScene(this);
+    this.player = new PlayerSwarm(this, this.laneCenterX(this.selectedLane, road.playerY), road.playerY);
+    this.player.container.setDepth(900);
+    this.enemySpawner = new EnemySwarmSpawner(this, { lane: centerLane, spawnY: road.horizonY - 12 });
     this.createInput();
 
     this.distanceText = this.add
-      .text(195, 675, "Swipe or drag to steer", {
-        color: "#9dbccc",
+      .text(195, 675, "Swipe or drag to choose a lane", {
+        color: "#d7e1ea",
         fontFamily: "Inter, sans-serif",
         fontSize: "14px",
-        fontStyle: "700"
+        fontStyle: "800"
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setDepth(950);
+
+    gameEvents.emit("run:update", this.snapshot());
 
     if (this.idle) {
-      this.player?.setAlpha(0.72);
-      this.distanceText.setText("Ready for launch");
+      this.player.container.setAlpha(0.72);
+      this.distanceText.setText("Ready for numbers");
     }
   }
 
   update(_time: number, delta: number) {
-    this.roadOffset = (this.roadOffset + delta * 0.11) % 64;
-    this.children.getByName("lane-lines")?.setData("offset", this.roadOffset);
+    const deltaSeconds = delta / 1000;
+    this.spaceScene?.update(deltaSeconds);
 
-    if (!this.player || !this.simulator || this.idle || this.ending) {
+    if (!this.player || this.idle || this.ending) {
       this.animatePlayer(delta);
       return;
     }
 
-    const deltaSeconds = delta / 1000;
-    const spawns = this.simulator.update(deltaSeconds);
-    spawns.forEach((spawn) => this.addEntity(spawn));
+    const progress = Phaser.Math.Clamp(this.distance / runDistanceGoal, 0, 1);
+    this.distance += 80 * deltaSeconds;
+    this.cardSpawnTimer -= deltaSeconds;
 
-    this.fireTimer -= deltaSeconds;
-    if (this.fireTimer <= 0) {
-      this.fireTimer = 0.16;
-      this.fireBolt();
+    if (this.cardSpawnTimer <= 0) {
+      this.cardSpawnTimer = Phaser.Math.Linear(1.9, 1.25, progress);
+      this.spawnRightCard();
     }
+    const enemySlots = Math.max(0, maxVisibleEnemies - this.enemies.length);
+    this.enemies.push(...(this.enemySpawner?.update(deltaSeconds, progress, enemySlots) ?? []));
 
     this.animatePlayer(delta);
-    this.moveEntities(deltaSeconds);
-    this.moveBolts(deltaSeconds);
-    this.checkBoltHits();
-    this.checkCollisions();
-    gameEvents.emit("run:update", this.simulator.snapshot());
+    this.fireBullets(this.time.now);
+    this.moveEnemies(deltaSeconds);
+    this.moveCards(deltaSeconds);
+    this.moveBullets(deltaSeconds);
+    this.checkBulletHits();
+    this.checkEnemyCollisions();
+    this.checkCardCollisions();
 
-    if (this.simulator.isFinished()) {
-      this.finishRun(this.simulator.result());
+    gameEvents.emit("run:update", this.snapshot());
+    this.distanceText?.setText(`${Math.floor(this.distance)}m`);
+
+    if (this.distance >= runDistanceGoal) {
+      this.finishRun("complete");
     }
-
-    this.distanceText?.setText(`${Math.floor((this.simulator.snapshot().distance / this.simulator.distanceGoal) * 100)}% to Cheese Minor`);
-  }
-
-  private createRunnerBackdrop() {
-    this.add.rectangle(195, 360, 390, 720, 0x20324f);
-    this.add.rectangle(195, 420, 390, 600, 0x263a5d, 0.78);
-    for (let index = 0; index < 64; index += 1) {
-      const x = Phaser.Math.Between(6, 384);
-      const y = Phaser.Math.Between(0, 720);
-      const radius = Phaser.Math.FloatBetween(0.8, 2.2);
-      const alpha = Phaser.Math.FloatBetween(0.16, 0.62);
-      const star = this.add.circle(x, y, radius, 0xffffff, alpha);
-      this.tweens.add({
-        targets: star,
-        y: y + Phaser.Math.Between(10, 26),
-        duration: Phaser.Math.Between(1100, 2300),
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut"
-      });
-    }
-    this.add.circle(52, 150, 36, 0x304a77, 0.76);
-    this.add.circle(337, 226, 22, 0x6a3f7d, 0.7);
-  }
-
-  private createRoad() {
-    const roadGraphics = this.add.graphics();
-    roadGraphics.fillStyle(0x9ba0b6, 1);
-    roadGraphics.fillPoints(
-      [
-        new Phaser.Geom.Point(road.centerX - road.topWidth / 2, road.horizonY),
-        new Phaser.Geom.Point(road.centerX + road.topWidth / 2, road.horizonY),
-        new Phaser.Geom.Point(road.centerX + road.bottomWidth / 2, road.bottomY),
-        new Phaser.Geom.Point(road.centerX - road.bottomWidth / 2, road.bottomY)
-      ],
-      true
-    );
-    roadGraphics.lineStyle(8, 0x6f748b, 1);
-    roadGraphics.strokePoints(
-      [
-        new Phaser.Geom.Point(road.centerX - road.topWidth / 2, road.horizonY),
-        new Phaser.Geom.Point(road.centerX - road.bottomWidth / 2, road.bottomY)
-      ],
-      false
-    );
-    roadGraphics.strokePoints(
-      [
-        new Phaser.Geom.Point(road.centerX + road.topWidth / 2, road.horizonY),
-        new Phaser.Geom.Point(road.centerX + road.bottomWidth / 2, road.bottomY)
-      ],
-      false
-    );
-
-    const graphics = this.add.graphics();
-    graphics.setName("lane-lines");
-    graphics.setDepth(1);
-    const draw = () => {
-      const offset = graphics.getData("offset") ?? 0;
-      graphics.clear();
-      graphics.lineStyle(2, 0xe5edf8, 0.34);
-      for (let divider = 1; divider < 5; divider += 1) {
-        for (let y = road.horizonY + offset; y < road.bottomY; y += 64) {
-          const nextY = Math.min(y + 28, road.bottomY);
-          const x1 = this.laneBoundaryX(divider, y);
-          const x2 = this.laneBoundaryX(divider, nextY);
-          graphics.strokeLineShape(new Phaser.Geom.Line(x1, y, x2, nextY));
-        }
-      }
-    };
-    this.events.on(Phaser.Scenes.Events.UPDATE, draw);
-  }
-
-  private createPlayer() {
-    const ship = this.add.container(this.laneCenterX(this.selectedLane, road.playerY), road.playerY);
-    const shadow = this.add.ellipse(0, 30, 58, 18, 0x263046, 0.36);
-    const ring = this.add.ellipse(0, 26, 56, 20, 0x66f2a8, 0.88);
-    ring.setStrokeStyle(4, 0xffdf62, 0.8);
-    const flame = this.add.triangle(0, 30, -9, 0, 9, 0, 0, 24, 0xff8a65, 0.9);
-    const hull = this.add.triangle(0, -12, -24, 24, 24, 24, 0, -30, 0xe7fbff);
-    const window = this.add.circle(0, 0, 8, 0x43c7ff);
-    const wobble = this.add.text(0, 24, "S.S. ?", {
-      color: "#07131d",
-      fontFamily: "Inter, sans-serif",
-      fontSize: "9px",
-      fontStyle: "900"
-    }).setOrigin(0.5);
-    ship.add([shadow, ring, flame, hull, window, wobble]);
-    ship.setDepth(20);
-    this.player = ship;
   }
 
   private createInput() {
@@ -215,20 +125,20 @@ export class TravelScene extends Phaser.Scene {
       if (!pointer.isDown || this.idle) {
         return;
       }
-      this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, road.playerY), 0, 4);
+      this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, road.playerY), centerLane, cardLane);
     });
 
     this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       if (!this.idle) {
-        this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, road.playerY), 0, 4);
+        this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, road.playerY), centerLane, cardLane);
       }
     });
 
     this.input.keyboard?.on("keydown-LEFT", () => {
-      this.selectedLane = Phaser.Math.Clamp(this.selectedLane - 1, 0, 4);
+      this.selectedLane = Phaser.Math.Clamp(this.selectedLane - 1, centerLane, cardLane);
     });
     this.input.keyboard?.on("keydown-RIGHT", () => {
-      this.selectedLane = Phaser.Math.Clamp(this.selectedLane + 1, 0, 4);
+      this.selectedLane = Phaser.Math.Clamp(this.selectedLane + 1, centerLane, cardLane);
     });
   }
 
@@ -236,156 +146,239 @@ export class TravelScene extends Phaser.Scene {
     if (!this.player) {
       return;
     }
+
     const targetX = this.laneCenterX(this.selectedLane, road.playerY);
-    this.player.x = Phaser.Math.Linear(this.player.x, targetX, Math.min(1, delta / 80));
-    this.player.y = road.playerY + Math.sin(this.time.now / 130) * 4;
-    this.player.rotation = Phaser.Math.Clamp((targetX - this.player.x) / 120, -0.28, 0.28);
+    this.player.container.x = Phaser.Math.Linear(this.player.container.x, targetX, Math.min(1, delta / 80));
+    this.player.container.y = road.playerY + Math.sin(this.time.now / 130) * 4;
+    this.player.update(this.time.now);
   }
 
-  private addEntity(spec: SpawnSpec) {
-    const body = this.add.container(this.laneCenterX(spec.lane, spec.y), spec.y);
-    body.setDepth(3);
-
-    if (spec.kind === "gate") {
-      const isGood = spec.gateEffect === "+1" || spec.gateEffect === "x2";
-      body.add(this.add.rectangle(0, 0, 72, 54, isGood ? colors.gateGood : colors.gateBad, 0.92));
-      body.add(this.add.rectangle(0, 0, 62, 44, isGood ? 0x2f8fb5 : 0xb83c4b, 0.82));
-    } else if (spec.kind === "hazard") {
-      const number = Phaser.Math.Between(6, 14).toString();
-      body.add(this.add.rectangle(0, 6, 62, 36, 0x9b2437, 1));
-      body.add(this.add.rectangle(0, -10, 58, 16, colors.hazard, 1));
-      spec.label = number;
-    } else if (spec.kind === "npc") {
-      body.add(this.add.ellipse(0, 4, 66, 32, colors.npc));
-      body.add(this.add.rectangle(0, -8, 38, 12, 0xffdf62));
-      body.add(this.add.circle(14, 0, 6, 0x07131d));
-    } else if (spec.kind === "coin") {
-      body.add(this.add.circle(0, 0, 17, colors.coin));
-    } else if (spec.kind === "fuel") {
-      body.add(this.add.rectangle(0, 0, 36, 42, colors.fuel));
-    } else {
-      body.add(this.add.star(0, 0, 5, 10, 22, colors.artefact));
-    }
-
-    body.add(
-      this.add
-        .text(0, 0, spec.label ?? "", {
-          color: spec.kind === "coin" ? "#5a3b00" : "#ffffff",
-          fontFamily: "Inter, sans-serif",
-          fontSize: spec.kind === "gate" ? "18px" : "11px",
-          fontStyle: "900"
-        })
-        .setOrigin(0.5)
-    );
-
-    this.applyPerspective(body, spec.lane, spec.y);
-    this.activeEntities.push({ spec, body });
-  }
-
-  private moveEntities(deltaSeconds: number) {
-    for (const entity of this.activeEntities) {
-      entity.spec.y += entity.spec.speed * deltaSeconds;
-      entity.body.y = entity.spec.y;
-      entity.body.x = this.laneCenterX(entity.spec.lane, entity.spec.y);
-      this.applyPerspective(entity.body, entity.spec.lane, entity.spec.y);
-      entity.body.rotation += entity.spec.kind === "artefact" ? deltaSeconds * 2.4 : 0;
-    }
-
-    const visible = this.activeEntities.filter((entity) => {
-      if (entity.body.y > 770) {
-        entity.body.destroy();
-        return false;
-      }
-      return true;
-    });
-    this.activeEntities = visible;
-  }
-
-  private fireBolt() {
+  private spawnRightCard() {
     if (!this.player) {
       return;
     }
 
-    const bolt = this.add.container(this.player.x, road.playerY - 42);
-    bolt.add(this.add.circle(0, 0, 4, 0xfff08a));
-    bolt.add(this.add.rectangle(0, 14, 4, 26, 0xffd35a, 0.78));
-    bolt.setDepth(18);
-    this.activeBolts.push({ body: bolt, lane: this.selectedLane, y: road.playerY - 42 });
+    const playerUnits = this.player.units;
+    const timeToCollisionSeconds = (road.playerY - road.horizonY) / 160;
+    const cardSpec = generateBalancedCard({
+      playerUnits,
+      distanceTravelled: this.distance,
+      targetRunDistance: runDistanceGoal,
+      timeToCollisionSeconds,
+      random: () => Phaser.Math.FloatBetween(0, 1)
+    });
+
+    const card = new NumberCard(this, cardLane, road.horizonY + 5, cardSpec.value);
+    card.container.setData("balance", cardSpec);
+    this.applyPerspective(card.container, cardLane, card.y);
+    this.cards.push(card);
+
+    if (window.localStorage.getItem("odd-orbit:debug-card-balance") === "true") {
+      console.table([
+        {
+          lane: cardLane,
+          units: playerUnits,
+          progress: (this.distance / runDistanceGoal).toFixed(2),
+          difficulty: cardSpec.difficulty,
+          expectedHits: cardSpec.expectedHits.toFixed(1),
+          start: cardSpec.value,
+          estimatedCollision: cardSpec.estimatedValueAtCollision.toFixed(1)
+        }
+      ]);
+    }
   }
 
-  private moveBolts(deltaSeconds: number) {
-    for (const bolt of this.activeBolts) {
-      bolt.y -= 520 * deltaSeconds;
-      bolt.body.y = bolt.y;
-      bolt.body.x = this.laneCenterX(bolt.lane, bolt.y);
-      bolt.body.setScale(Phaser.Math.Clamp(this.scaleAtY(bolt.y) * 0.82, 0.36, 1));
+  private fireBullets(timeMs: number) {
+    if (!this.player) {
+      return;
     }
 
-    this.activeBolts = this.activeBolts.filter((bolt) => {
-      if (bolt.y < road.horizonY) {
-        bolt.body.destroy();
+    for (const shooter of this.player.readyShooters(timeMs)) {
+      const velocity = this.bulletVelocityForLane(this.selectedLane, shooter.x, shooter.y);
+      const bullet = new Bullet(this, this.selectedLane, shooter.x, shooter.y, velocity);
+      bullet.container.setDepth(850);
+      this.bullets.push(bullet);
+    }
+  }
+
+  private moveCards(deltaSeconds: number) {
+    for (const card of this.cards) {
+      card.y += 160 * deltaSeconds;
+      this.applyPerspective(card.container, card.lane, card.y);
+    }
+
+    this.cards = this.cards.filter((card) => {
+      if (card.y > 780) {
+        card.destroy();
         return false;
       }
       return true;
     });
   }
 
-  private checkBoltHits() {
-    for (const bolt of this.activeBolts) {
-      for (const entity of this.activeEntities) {
-        if (entity.spec.lane !== bolt.lane || (entity.spec.kind !== "hazard" && entity.spec.kind !== "npc")) {
-          continue;
-        }
-        if (Math.abs(entity.spec.y - bolt.y) > 28) {
-          continue;
-        }
-        entity.body.destroy();
-        bolt.body.destroy();
-        gameEvents.emit("run:event", entity.spec.kind === "npc" ? "NPC ship politely removed." : "Obstacle cleared!");
-      }
+  private moveEnemies(deltaSeconds: number) {
+    for (const enemy of this.enemies) {
+      enemy.y += enemy.speed * deltaSeconds;
+      const wobble = Math.sin(this.time.now * 0.001 * enemy.wobbleSpeed + enemy.seed) * enemy.wobbleAmount;
+      this.applyPerspective(enemy.container, enemy.lane, enemy.y, enemy.xOffset + wobble);
     }
 
-    this.activeEntities = this.activeEntities.filter((entity) => entity.body.active);
-    this.activeBolts = this.activeBolts.filter((bolt) => bolt.body.active);
+    this.enemies = this.enemies.filter((enemy) => {
+      if (enemy.y > 780) {
+        enemy.destroy();
+        return false;
+      }
+      return true;
+    });
   }
 
-  private checkCollisions() {
-    if (!this.player || !this.simulator) {
-      return;
-    }
-
-    for (const entity of this.activeEntities) {
-      const laneMatches = entity.spec.lane === this.selectedLane;
-      const yDistance = Math.abs(entity.spec.y - road.playerY);
-      if (!laneMatches || yDistance > 42) {
+  private moveBullets(deltaSeconds: number) {
+    for (const bullet of this.bullets) {
+      if (bullet.state === "impacting") {
+        bullet.container.setAlpha(Math.max(0, bullet.container.alpha - deltaSeconds * 12));
         continue;
       }
 
-      const reward = this.simulator.collect(entity.spec.kind, entity.spec.gateEffect);
-      if (reward.message) {
-        gameEvents.emit("run:event", reward.message);
+      bullet.beginFrame();
+      bullet.container.x += bullet.velocity.x * deltaSeconds;
+      bullet.container.y += bullet.velocity.y * deltaSeconds;
+      bullet.y = bullet.container.y;
+      bullet.container.y = bullet.y;
+      bullet.container.setScale(Phaser.Math.Clamp(this.scaleAtY(bullet.y) * 0.82, 0.36, 1));
+    }
+
+    this.bullets = this.bullets.filter((bullet) => {
+      if (bullet.state === "impacting" && this.time.now >= bullet.impactUntil) {
+        bullet.destroy();
+        return false;
       }
-      if (entity.spec.kind === "hazard" || entity.spec.kind === "npc") {
-        this.cameras.main.shake(120, 0.008);
+      if (bullet.y < -120 || bullet.container.x < -80 || bullet.container.x > 470) {
+        bullet.destroy();
+        return false;
       }
-      if (reward.remove) {
-        entity.body.destroy();
+      return true;
+    });
+  }
+
+  private checkBulletHits() {
+    for (const bullet of this.bullets) {
+      if (bullet.state !== "flying") {
+        continue;
+      }
+
+      let hitSomething = false;
+      for (const enemy of this.enemies) {
+        if (bullet.lane !== centerLane || !this.didBulletSegmentHitEnemy(bullet, enemy)) {
+          continue;
+        }
+        const impactPoint = this.penetratedImpactPoint(bullet, enemy);
+        enemy.health -= 1;
+        bullet.impact(impactPoint.x, impactPoint.y, this.time.now);
+        this.createImpactFlash(impactPoint.x, impactPoint.y);
+        if (enemy.health <= 0) {
+          enemy.destroy();
+        }
+        hitSomething = true;
+        break;
+      }
+
+      if (hitSomething) {
+        continue;
+      }
+
+      for (const card of this.cards) {
+        if (card.lane !== bullet.lane || Math.abs(card.y - bullet.y) > 30) {
+          continue;
+        }
+        const direction = bullet.velocity.clone().normalize();
+        card.hit();
+        bullet.impact(bullet.container.x + direction.x * 10, bullet.container.y + direction.y * 10, this.time.now);
+        break;
       }
     }
 
-    this.activeEntities = this.activeEntities.filter((entity) => entity.body.active);
+    this.enemies = this.enemies.filter((enemy) => enemy.container.active);
+    this.bullets = this.bullets.filter((bullet) => bullet.container.active);
+  }
+
+  private checkEnemyCollisions() {
+    if (!this.player) {
+      return;
+    }
+
+    for (const enemy of this.enemies) {
+      if (enemy.lane !== this.selectedLane || Math.abs(enemy.y - road.playerY) > 34) {
+        continue;
+      }
+
+      this.player.setUnits(this.player.units - 1);
+      enemy.destroy();
+      this.cameras.main.shake(90, 0.005);
+
+      if (this.player.units <= 0) {
+        this.finishRun("game-over");
+        break;
+      }
+    }
+
+    this.enemies = this.enemies.filter((enemy) => enemy.container.active);
+  }
+
+  private checkCardCollisions() {
+    if (!this.player) {
+      return;
+    }
+
+    for (const card of this.cards) {
+      if (card.lane !== this.selectedLane || Math.abs(card.y - road.playerY) > 40) {
+        continue;
+      }
+
+      this.player.setUnits(this.player.units + card.value);
+      card.destroy();
+      this.cameras.main.shake(80, 0.004);
+
+      if (this.player.units <= 0) {
+        this.finishRun("game-over");
+        break;
+      }
+    }
+
+    this.cards = this.cards.filter((card) => card.container.active);
+  }
+
+  private snapshot() {
+    return {
+      units: this.player?.units ?? 1,
+      distance: Math.floor(this.distance),
+      distanceGoal: runDistanceGoal
+    };
+  }
+
+  private finishRun(status: RunResult["status"]) {
+    if (this.ending || !this.player) {
+      return;
+    }
+
+    this.ending = true;
+    const result: RunResult = {
+      status,
+      distance: Math.floor(this.distance),
+      units: Math.max(0, this.player.units),
+      message: status === "complete" ? "Run complete." : "Game over.",
+      completedAt: new Date().toISOString()
+    };
+    this.cameras.main.fadeOut(260, 7, 19, 29);
+    this.time.delayedCall(280, () => {
+      gameEvents.emit("run:end", result);
+      this.scene.pause();
+    });
   }
 
   private laneCenterX(lane: number, y: number) {
     const width = this.roadWidthAtY(y);
     const left = road.centerX - width / 2;
-    return left + ((lane + 0.5) / 5) * width;
-  }
-
-  private laneBoundaryX(divider: number, y: number) {
-    const width = this.roadWidthAtY(y);
-    const left = road.centerX - width / 2;
-    return left + (divider / 5) * width;
+    return left + ((lane + 0.5) / laneCount) * width;
   }
 
   private roadWidthAtY(y: number) {
@@ -398,25 +391,72 @@ export class TravelScene extends Phaser.Scene {
     return Phaser.Math.Linear(0.34, 1.18, progress);
   }
 
-  private applyPerspective(body: Phaser.GameObjects.Container, lane: number, y: number) {
-    body.x = this.laneCenterX(lane, y);
+  private applyPerspective(body: Phaser.GameObjects.Container, lane: number, y: number, xOffset = 0) {
+    body.x = this.laneCenterX(lane, y) + xOffset * this.scaleAtY(y);
     body.y = y;
     body.setScale(this.scaleAtY(y));
     body.setDepth(Math.floor(y));
   }
 
+  private bulletVelocityForLane(lane: number, x: number, y: number) {
+    const targetY = road.horizonY - 150 + Phaser.Math.FloatBetween(-26, 18);
+    const targetX = this.laneCenterX(lane, road.horizonY + 18) + Phaser.Math.FloatBetween(-14, 14);
+    const direction = new Phaser.Math.Vector2(targetX - x, targetY - y).normalize();
+
+    return direction.scale(610);
+  }
+
+  private didBulletSegmentHitEnemy(bullet: Bullet, enemy: EnemySphere) {
+    const closest = this.closestPointOnSegment(
+      bullet.previousPosition.x,
+      bullet.previousPosition.y,
+      bullet.container.x,
+      bullet.container.y,
+      enemy.container.x,
+      enemy.container.y
+    );
+    const hitRadius = enemy.radius * enemy.container.scaleX * 1.02;
+    return Phaser.Math.Distance.Between(closest.x, closest.y, enemy.container.x, enemy.container.y) <= hitRadius;
+  }
+
+  private penetratedImpactPoint(bullet: Bullet, enemy: EnemySphere) {
+    const direction = bullet.velocity.clone().normalize();
+    return {
+      x: enemy.container.x + direction.x * enemy.radius * enemy.container.scaleX * 0.45,
+      y: enemy.container.y + direction.y * enemy.radius * enemy.container.scaleY * 0.45
+    };
+  }
+
+  private closestPointOnSegment(ax: number, ay: number, bx: number, by: number, px: number, py: number) {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const abLengthSquared = abx * abx + aby * aby;
+    if (abLengthSquared === 0) {
+      return { x: ax, y: ay };
+    }
+
+    const t = Phaser.Math.Clamp(((px - ax) * abx + (py - ay) * aby) / abLengthSquared, 0, 1);
+    return {
+      x: ax + abx * t,
+      y: ay + aby * t
+    };
+  }
+
+  private createImpactFlash(x: number, y: number) {
+    const flash = this.add.circle(x, y, 5, 0xfff0a0, 0.85);
+    flash.setDepth(860);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scale: 1.9,
+      duration: 80,
+      onComplete: () => flash.destroy()
+    });
+  }
+
   private pointerLane(x: number, y: number) {
     const width = this.roadWidthAtY(y);
     const left = road.centerX - width / 2;
-    return Math.floor(((x - left) / width) * 5);
-  }
-
-  private finishRun(result: RunResult) {
-    this.ending = true;
-    this.cameras.main.fadeOut(360, 7, 19, 29);
-    this.time.delayedCall(380, () => {
-      gameEvents.emit("run:end", result);
-      this.scene.pause();
-    });
+    return Math.floor(((x - left) / width) * laneCount);
   }
 }
