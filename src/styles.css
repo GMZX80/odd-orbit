@@ -197,6 +197,36 @@ p {
   white-space: nowrap;
 }
 
+#hud-units {
+  display: inline-block;
+}
+
+.hud-units-hit {
+  animation: unit-hit 280ms ease-out;
+}
+
+@keyframes unit-hit {
+  0% {
+    color: #ff6d75;
+    text-shadow: 0 0 14px rgba(255, 109, 117, 0.95);
+    transform: translateX(0) scale(1);
+  }
+
+  35% {
+    transform: translateX(-3px) scale(1.12);
+  }
+
+  70% {
+    transform: translateX(3px) scale(1.04);
+  }
+
+  100% {
+    color: #f7fbff;
+    text-shadow: none;
+    transform: translateX(0) scale(1);
+  }
+}
+
 .hud-event {
   justify-content: center;
   min-height: 32px;

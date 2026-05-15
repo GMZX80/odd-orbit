@@ -1,7 +1,7 @@
 import Phaser from "phaser";
+import { activeShooterLimit, fireIntervalMsForUnits } from "../systems/firepower";
 
 const visibleUnitCap = 60;
-const visibleShooterCap = 20;
 const extraVisualDotCap = 160;
 const maxDistanceFromCenter = 64;
 
@@ -19,11 +19,13 @@ interface SwarmUnit {
   direction: 1 | -1;
   nextDirectionChangeAt: number;
   nextFireAt: number;
+  aimBiasX: number;
 }
 
 export interface ShooterPosition {
   x: number;
   y: number;
+  aimBiasX: number;
 }
 
 export class PlayerSwarm {
@@ -81,7 +83,7 @@ export class PlayerSwarm {
   }
 
   readyShooters(timeMs: number): ShooterPosition[] {
-    const shooters = this.swarmUnits.slice(0, Math.min(this.units, visibleShooterCap));
+    const shooters = this.wideShooterUnits();
     const ready: ShooterPosition[] = [];
 
     for (const unit of shooters) {
@@ -91,14 +93,57 @@ export class PlayerSwarm {
 
       ready.push({
         x: this.container.x + unit.position.x,
-        y: this.container.y + unit.position.y - 10
+        y: this.container.y + unit.position.y - 10,
+        aimBiasX: this.units <= 1 ? 0 : unit.aimBiasX + Phaser.Math.Clamp(unit.position.x * 0.18, -10, 10)
       });
 
-      const cadenceBonus = Math.min(this.units, visibleShooterCap) * 3;
-      unit.nextFireAt = timeMs + 420 - cadenceBonus + ((unit.seed * 97) % 90);
+      unit.nextFireAt = timeMs + fireIntervalMsForUnits(this.units, (unit.seed * 97) % 90);
     }
 
     return ready;
+  }
+
+  sidewinderLaunchPosition(): ShooterPosition | undefined {
+    if (this.swarmUnits.length === 0) {
+      return undefined;
+    }
+
+    const shooters = this.wideShooterUnits();
+    const edgeShooters = [...shooters].sort((a, b) => Math.abs(b.position.x) - Math.abs(a.position.x));
+    const unit = edgeShooters[Math.min(edgeShooters.length - 1, Phaser.Math.Between(0, Math.min(4, edgeShooters.length - 1)))];
+
+    return {
+      x: this.container.x + unit.position.x,
+      y: this.container.y + unit.position.y - 12,
+      aimBiasX: unit.aimBiasX
+    };
+  }
+
+  playDamageFeedback() {
+    const unit = this.swarmUnits[this.swarmUnits.length - 1];
+    const popX = this.container.x + (unit?.position.x ?? 0);
+    const popY = this.container.y + (unit?.position.y ?? -12);
+    const pop = this.scene.add.circle(popX, popY, 7, 0x9fe8ff, 0.9);
+    pop.setStrokeStyle(2, 0xff5e66, 0.95);
+    pop.setDepth(980);
+
+    this.scene.tweens.add({
+      targets: pop,
+      alpha: 0,
+      scale: 2.4,
+      duration: 190,
+      ease: "Quad.easeOut",
+      onComplete: () => pop.destroy()
+    });
+
+    this.scene.tweens.add({
+      targets: this.container,
+      scaleX: 1.08,
+      scaleY: 1.08,
+      duration: 70,
+      yoyo: true,
+      ease: "Sine.easeOut"
+    });
   }
 
   visibleUnits() {
@@ -131,7 +176,8 @@ export class PlayerSwarm {
         followStrength: 0.08 + (((index * 13) % 100) / 100) * 0.1,
         direction: index % 2 === 0 ? 1 : -1,
         nextDirectionChangeAt: this.scene.time.now + 1600 + ((seed * 997) % 4200),
-        nextFireAt: this.scene.time.now + 120 + index * 44
+        nextFireAt: this.scene.time.now + 120 + index * 44,
+        aimBiasX: Math.sin(seed * 4.7) * 20
       });
     }
 
@@ -147,6 +193,28 @@ export class PlayerSwarm {
 
   private densityScale() {
     return Phaser.Math.Linear(0.82, 1.24, Math.min(1, this.visibleUnits() / visibleUnitCap));
+  }
+
+  private wideShooterUnits() {
+    const maxShooters = activeShooterLimit(this.units, this.swarmUnits.length);
+    if (maxShooters <= 0) {
+      return [];
+    }
+    if (maxShooters === 1) {
+      return [this.swarmUnits[0]];
+    }
+    if (this.swarmUnits.length <= maxShooters) {
+      return this.swarmUnits;
+    }
+
+    const sorted = [...this.swarmUnits].sort((a, b) => a.position.x - b.position.x);
+    const shooters: SwarmUnit[] = [];
+    for (let index = 0; index < maxShooters; index += 1) {
+      const sortedIndex = Math.round((index / (maxShooters - 1)) * (sorted.length - 1));
+      shooters.push(sorted[sortedIndex]);
+    }
+
+    return shooters;
   }
 
   private renderExtraSwarmLayer(timeMs: number) {

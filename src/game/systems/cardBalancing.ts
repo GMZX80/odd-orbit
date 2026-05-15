@@ -1,3 +1,5 @@
+import { activeShooterLimit, averageFireIntervalSecondsForUnits } from "./firepower";
+
 export type CardDifficulty = "repairable" | "tax" | "threat" | "wall";
 
 export interface BalancedCard {
@@ -22,6 +24,7 @@ interface PositiveCardParams {
   playerUnits: number;
   distanceTravelled: number;
   targetRunDistance: number;
+  random?: () => number;
 }
 
 interface RowParams extends PositiveCardParams {
@@ -33,9 +36,9 @@ interface RowParams extends PositiveCardParams {
 type SingleCardParams = Omit<RowParams, "laneCount">;
 
 export function estimateExpectedHitsBeforeCollision(params: EstimateHitsParams) {
-  const activeShooters = Math.min(params.playerUnits, 20);
-  const fireIntervalSeconds = Math.max(0.24, 0.465 - activeShooters * 0.003);
-  const hitEfficiency = 0.38;
+  const activeShooters = activeShooterLimit(params.playerUnits, params.playerUnits);
+  const fireIntervalSeconds = averageFireIntervalSecondsForUnits(params.playerUnits);
+  const hitEfficiency = 0.34;
   const totalShots = activeShooters * (params.timeToCollisionSeconds / fireIntervalSeconds);
 
   return totalShots * hitEfficiency;
@@ -79,7 +82,8 @@ export function calculateStartingNegativeCardValue(params: NegativeCardParams) {
 
 export function calculatePositiveCardValue(params: PositiveCardParams) {
   const progress = progressFor(params.distanceTravelled, params.targetRunDistance);
-  const value = Math.ceil(1 + Math.sqrt(params.playerUnits) * (0.25 + 0.35 * progress));
+  const jitter = params.random ? 0.82 + params.random() * 0.46 : 1;
+  const value = Math.ceil((1 + Math.sqrt(params.playerUnits) * (0.25 + 0.35 * progress)) * jitter);
 
   return clamp(value, 1, 20);
 }

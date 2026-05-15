@@ -1,4 +1,5 @@
 import type { RunResult, RunStateSnapshot } from "../systems/runTypes";
+import { convertRunnerSpheresToStrategicUnits } from "../systems/runnerStrategicConversion";
 
 function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -30,6 +31,12 @@ export function createDomUi() {
       retryButton.addEventListener("click", handler);
     },
 
+    showGalaxy() {
+      menu.classList.remove("screen-visible");
+      result.classList.remove("screen-visible");
+      hud.classList.remove("hud-visible");
+    },
+
     showHud() {
       menu.classList.remove("screen-visible");
       result.classList.remove("screen-visible");
@@ -41,16 +48,25 @@ export function createDomUi() {
       distance.textContent = `Distance: ${snapshot.distance}m`;
     },
 
-    showResult(runResult: RunResult) {
+    flashUnitDamage() {
+      units.classList.remove("hud-units-hit");
+      void units.offsetWidth;
+      units.classList.add("hud-units-hit");
+    },
+
+    showResult(runResult: RunResult, actionLabel = "Fly Again") {
       hud.classList.remove("hud-visible");
       result.classList.add("screen-visible");
-      resultMark.textContent = runResult.status === "complete" ? "Run Complete" : "Game Over";
-      resultTitle.textContent = runResult.status === "complete" ? "Run Complete" : "Game Over";
+      const stabilisedUnits = runResult.status === "complete" ? convertRunnerSpheresToStrategicUnits(runResult.finalUnits) : 0;
+      resultMark.textContent = runResult.status === "complete" ? "Escaped" : "Game Over";
+      resultTitle.textContent = runResult.status === "complete" ? "Wormhole Escape" : "Game Over";
       resultCopy.textContent = runResult.message;
       resultRewards.innerHTML = [
         reward("Distance", `${runResult.distance}m`),
-        reward("Final Units", runResult.units)
+        reward("Swarm", runResult.finalUnits),
+        reward("Stabilised", stabilisedUnits)
       ].join("");
+      retryButton.textContent = actionLabel;
     }
   };
 }

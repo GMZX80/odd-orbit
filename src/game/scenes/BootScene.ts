@@ -6,8 +6,6 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
-    this.scene.start("TravelScene", {
-      idle: true
-    });
+    this.scene.start("GalaxyMapScene");
   }
 }

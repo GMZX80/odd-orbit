@@ -1,15 +1,18 @@
 import Phaser from "phaser";
+import { routeEnemyThemeForFaction, type RouteEnemyTheme } from "../systems/factionTheme";
 import { EnemySphere } from "./EnemySphere";
 
 interface EnemySwarmSpawnerOptions {
   lane: number;
   spawnY: number;
+  theme?: RouteEnemyTheme;
 }
 
 export class EnemySwarmSpawner {
   private readonly scene: Phaser.Scene;
   private readonly lane: number;
   private readonly spawnY: number;
+  private theme: RouteEnemyTheme;
   private timer = 0;
   private bandIndex = 0;
 
@@ -17,6 +20,7 @@ export class EnemySwarmSpawner {
     this.scene = scene;
     this.lane = options.lane;
     this.spawnY = options.spawnY;
+    this.theme = options.theme ?? routeEnemyThemeForFaction("crimson");
   }
 
   reset() {
@@ -63,7 +67,7 @@ export class EnemySwarmSpawner {
         const y = this.spawnY - row * spacingY + Phaser.Math.FloatBetween(-4, 4);
         const radius = Phaser.Math.FloatBetween(6.2, 8.4);
         const seed = bandSeed + row * 7.31 + column * 3.17;
-        enemies.push(new EnemySphere(this.scene, this.lane, y, xOffset, baseSpeed + Phaser.Math.FloatBetween(-5, 7), radius, seed));
+        enemies.push(new EnemySphere(this.scene, this.lane, y, xOffset, baseSpeed + Phaser.Math.FloatBetween(-5, 7), radius, seed, this.theme));
       }
     }
 
