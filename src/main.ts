@@ -44,7 +44,9 @@ function startRun(startingUnits = 1, runInput?: WormholeRunInput) {
 
 function showGalaxyMap() {
   ui.showGalaxy();
-  game.scene.stop("TravelScene");
+  if (game.scene.isActive("TravelScene")) {
+    game.scene.stop("TravelScene");
+  }
   game.scene.start("GalaxyMapScene");
 }
 

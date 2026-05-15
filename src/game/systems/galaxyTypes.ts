@@ -4,6 +4,8 @@ export type TurnPhase = "deploy" | "command" | "fortify" | "npcTurn" | "gameOver
 
 export type RouteDifficulty = "easy" | "normal" | "hard";
 
+export type StrategicResolutionMode = "play" | "auto";
+
 export interface StarSystem {
   id: string;
   name: string;
@@ -71,10 +73,17 @@ export type StrategicArrivalOutcome = "neutralCaptured" | "enemyCaptured" | "rep
 export interface StrategicArrivalEffect {
   originSystemId: string;
   destinationSystemId: string;
-  rawRunnerSpheres: number;
+  resolutionMode: StrategicResolutionMode;
+  summaryLabel: string;
+  originUnitsBefore: number;
+  originUnitsAfter: number;
+  attackingUnitsCommitted: number;
+  attackingUnitsSurvived: number;
+  rawRunnerSpheres?: number;
   convertedStrategicUnits: number;
   defenderUnitsBefore: number;
   defenderUnitsAfter: number;
+  destinationUnitsAfter: number;
   destinationOwnerBefore: FactionId;
   destinationOwnerAfter: FactionId;
   outcome: StrategicArrivalOutcome;

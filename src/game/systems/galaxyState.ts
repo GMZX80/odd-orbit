@@ -16,7 +16,6 @@ import type {
 } from "./galaxyTypes";
 
 const npcFactions: FactionId[] = ["crimson", "amber", "violet"];
-const npcAttackEfficiency = 0.68;
 
 let systems = cloneSystems(initialSystems);
 let turnNumber = 1;
@@ -190,6 +189,8 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
   const survivors = Math.max(0, Math.floor(result.finalUnits));
   const destinationOwnerBefore = destination.owner;
   const defenderUnitsBefore = destination.fleetUnits;
+  const originUnitsBefore = origin.fleetUnits + input.startingUnits;
+  const originUnitsAfter = origin.fleetUnits;
 
   if (!result.escaped || survivors <= 0) {
     lastResolution = {
@@ -197,7 +198,21 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       detail: `The seed unit was lost before reaching ${destination.name}.`
     };
     pushLog("player", lastResolution.detail);
-    setStrategicArrivalEffect(input, survivors, 0, defenderUnitsBefore, destinationOwnerBefore, destination, "failed");
+    setStrategicArrivalEffect({
+      input,
+      resolutionMode: "play",
+      rawRunnerSpheres: survivors,
+      convertedStrategicUnits: 0,
+      originUnitsBefore,
+      originUnitsAfter,
+      attackingUnitsCommitted: input.startingUnits,
+      attackingUnitsSurvived: 0,
+      defenderUnitsBefore,
+      destinationOwnerBefore,
+      destination,
+      outcome: "failed",
+      summaryLabel: "WORMHOLE FAILED"
+    });
     enterFortifyPhase();
     return;
   }
@@ -212,7 +227,21 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       detail: `${destination.name} stabilised into a new blue sector.`
     };
     pushLog("player", lastResolution.detail);
-    setStrategicArrivalEffect(input, survivors, strategicArrivals, defenderUnitsBefore, destinationOwnerBefore, destination, "neutralCaptured");
+    setStrategicArrivalEffect({
+      input,
+      resolutionMode: "play",
+      rawRunnerSpheres: survivors,
+      convertedStrategicUnits: strategicArrivals,
+      originUnitsBefore,
+      originUnitsAfter,
+      attackingUnitsCommitted: input.startingUnits,
+      attackingUnitsSurvived: strategicArrivals,
+      defenderUnitsBefore,
+      destinationOwnerBefore,
+      destination,
+      outcome: "neutralCaptured",
+      summaryLabel: "WORMHOLE WIN"
+    });
     enterFortifyPhase();
     checkVictoryState();
     return;
@@ -226,7 +255,21 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       title: "System Captured",
       detail: `${destination.name} fell from ${getFactionName(previousOwner)} with ${strategicArrivals} stabilised units holding orbit.`
     };
-    setStrategicArrivalEffect(input, survivors, strategicArrivals, defenderUnitsBefore, destinationOwnerBefore, destination, "enemyCaptured");
+    setStrategicArrivalEffect({
+      input,
+      resolutionMode: "play",
+      rawRunnerSpheres: survivors,
+      convertedStrategicUnits: strategicArrivals,
+      originUnitsBefore,
+      originUnitsAfter,
+      attackingUnitsCommitted: input.startingUnits,
+      attackingUnitsSurvived: strategicArrivals,
+      defenderUnitsBefore,
+      destinationOwnerBefore,
+      destination,
+      outcome: "enemyCaptured",
+      summaryLabel: "WORMHOLE WIN"
+    });
     pushLog("player", lastResolution.detail);
     enterFortifyPhase();
     checkVictoryState();
@@ -239,29 +282,163 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
     detail: `${strategicArrivals} stabilised units reinforced ${destination.name}.`
   };
   pushLog("player", lastResolution.detail);
+  setStrategicArrivalEffect({
+    input,
+    resolutionMode: "play",
+    rawRunnerSpheres: survivors,
+    convertedStrategicUnits: strategicArrivals,
+    originUnitsBefore,
+    originUnitsAfter,
+    attackingUnitsCommitted: input.startingUnits,
+    attackingUnitsSurvived: strategicArrivals,
+    defenderUnitsBefore,
+    destinationOwnerBefore,
+    destination,
+    outcome: "neutralCaptured",
+    summaryLabel: "WORMHOLE WIN"
+  });
   enterFortifyPhase();
 }
 
-function setStrategicArrivalEffect(
-  input: WormholeRunInput,
-  rawRunnerSpheres: number,
-  convertedStrategicUnits: number,
-  defenderUnitsBefore: number,
-  destinationOwnerBefore: FactionId,
-  destination: StarSystem,
-  outcome: StrategicArrivalOutcome
-) {
+export function estimateStrategicBattleOdds(originSystemId: string, destinationSystemId: string) {
+  const origin = findSystem(originSystemId);
+  const destination = findSystem(destinationSystemId);
+  if (!origin || !destination || origin.owner !== "player" || destination.owner === "player" || !origin.neighbours.includes(destination.id)) {
+    return 0;
+  }
+
+  const attackingUnits = Math.max(0, origin.fleetUnits - 1);
+  return estimateBattleWinChance(attackingUnits, Math.max(0, destination.fleetUnits), stableBattleSeed(origin.id, destination.id, attackingUnits, destination.fleetUnits));
+}
+
+export function autoResolveStrategicBattle(originSystemId: string, destinationSystemId: string) {
+  if (turnPhase !== "command" || commandUsed) {
+    return undefined;
+  }
+
+  const origin = findSystem(originSystemId);
+  const destination = findSystem(destinationSystemId);
+  if (
+    !origin ||
+    !destination ||
+    origin.owner !== "player" ||
+    destination.owner === "player" ||
+    !origin.neighbours.includes(destination.id) ||
+    origin.fleetUnits < 2
+  ) {
+    return undefined;
+  }
+
+  const destinationOwnerBefore = destination.owner;
+  const originUnitsBefore = origin.fleetUnits;
+  const defenderUnitsBefore = destination.fleetUnits;
+  const attackingUnitsCommitted = Math.max(0, origin.fleetUnits - 1);
+  let attackingUnits = attackingUnitsCommitted;
+  let defenderUnits = Math.max(0, defenderUnitsBefore);
+
+  origin.fleetUnits = 1;
+  commandUsed = true;
+
+  const battle = resolveStrategicBattle(attackingUnits, defenderUnits);
+  attackingUnits = battle.attackersRemaining;
+  defenderUnits = battle.defendersRemaining;
+  const captured = battle.captured;
+  const outcome: StrategicArrivalOutcome = captured ? (destinationOwnerBefore === "neutral" ? "neutralCaptured" : "enemyCaptured") : "repelled";
+
+  if (captured) {
+    destination.owner = "player";
+    destination.fleetUnits = attackingUnits;
+    lastResolution = {
+      title: "Auto Win",
+      detail: `${attackingUnitsCommitted} fleet units crossed. ${attackingUnits} survived.`
+    };
+  } else {
+    destination.fleetUnits = defenderUnits;
+    lastResolution = {
+      title: "Repelled",
+      detail: `${attackingUnitsCommitted} fleet units attacked. ${defenderUnits} defenders held.`
+    };
+  }
+  pushLog("player", lastResolution.detail);
+
+  const effect = setStrategicArrivalEffect({
+    input: {
+      originSystemId: origin.id,
+      destinationSystemId: destination.id,
+      startingUnits: attackingUnitsCommitted,
+      routeDifficulty: difficultyForDestination(destination),
+      destinationFactionId: destinationOwnerBefore,
+      destinationFactionColor: routeEnemyThemeForFaction(destinationOwnerBefore).fill
+    },
+    resolutionMode: "auto",
+    rawRunnerSpheres: 0,
+    convertedStrategicUnits: captured ? attackingUnits : 0,
+    originUnitsBefore,
+    originUnitsAfter: origin.fleetUnits,
+    attackingUnitsCommitted,
+    attackingUnitsSurvived: captured ? attackingUnits : 0,
+    defenderUnitsBefore,
+    destinationOwnerBefore,
+    destination,
+    outcome,
+    summaryLabel: captured ? "AUTO WIN" : "REPELLED"
+  });
+
+  enterFortifyPhase();
+  checkVictoryState();
+  return effect;
+}
+
+function setStrategicArrivalEffect(params: {
+  input: WormholeRunInput;
+  resolutionMode: "play" | "auto";
+  rawRunnerSpheres?: number;
+  convertedStrategicUnits: number;
+  originUnitsBefore: number;
+  originUnitsAfter: number;
+  attackingUnitsCommitted: number;
+  attackingUnitsSurvived: number;
+  defenderUnitsBefore: number;
+  destinationOwnerBefore: FactionId;
+  destination: StarSystem;
+  outcome: StrategicArrivalOutcome;
+  summaryLabel: string;
+}) {
+  const {
+    input,
+    resolutionMode,
+    rawRunnerSpheres,
+    convertedStrategicUnits,
+    originUnitsBefore,
+    originUnitsAfter,
+    attackingUnitsCommitted,
+    attackingUnitsSurvived,
+    defenderUnitsBefore,
+    destinationOwnerBefore,
+    destination,
+    outcome,
+    summaryLabel
+  } = params;
+
   pendingStrategicArrivalEffect = {
     originSystemId: input.originSystemId,
     destinationSystemId: input.destinationSystemId,
+    resolutionMode,
+    summaryLabel,
+    originUnitsBefore,
+    originUnitsAfter,
+    attackingUnitsCommitted,
+    attackingUnitsSurvived,
     rawRunnerSpheres,
     convertedStrategicUnits,
     defenderUnitsBefore,
     defenderUnitsAfter: destination.fleetUnits,
+    destinationUnitsAfter: destination.fleetUnits,
     destinationOwnerBefore,
     destinationOwnerAfter: destination.owner,
     outcome
   };
+  return pendingStrategicArrivalEffect;
 }
 
 export function canFortifyMove(originSystemId: string, destinationSystemId: string, unitsCommitted: number) {
@@ -463,12 +640,11 @@ function chooseAndExecuteNpcAction(faction: FactionId, deployment: number, deplo
 
 function bestNpcAttack(faction: FactionId, requireCapture: boolean) {
   return npcAttackCandidates(faction)
-    .filter((candidate) => candidate.destination.owner === "player" || candidate.destination.owner === "neutral")
-    .filter((candidate) => !requireCapture || expectedNpcSurvivors(candidate.origin) > candidate.destination.fleetUnits)
+    .filter((candidate) => !requireCapture || npcBattleScore(candidate.origin, candidate.destination) >= 0.58 || candidate.destination.fleetUnits <= 0)
     .sort((a, b) => {
-      const aPlayerPriority = a.destination.owner === "player" ? 1 : 0;
-      const bPlayerPriority = b.destination.owner === "player" ? 1 : 0;
-      return bPlayerPriority - aPlayerPriority || expectedNpcSurvivors(b.origin) - b.destination.fleetUnits - (expectedNpcSurvivors(a.origin) - a.destination.fleetUnits);
+      const aPlayerPriority = a.destination.owner === "player" ? 2 : a.destination.owner === "neutral" ? 1 : 0;
+      const bPlayerPriority = b.destination.owner === "player" ? 2 : b.destination.owner === "neutral" ? 1 : 0;
+      return bPlayerPriority - aPlayerPriority || npcBattleScore(b.origin, b.destination) - npcBattleScore(a.origin, a.destination);
     })[0];
 }
 
@@ -492,13 +668,13 @@ function npcAttackCandidates(faction: FactionId) {
 
 function resolveNpcAttack(faction: FactionId, origin: StarSystem, destination: StarSystem): GalaxyAction {
   const committed = Math.max(0, origin.fleetUnits - 1);
-  const expectedSurvivors = expectedNpcSurvivors(origin);
+  const battle = resolveStrategicBattle(committed, Math.max(0, destination.fleetUnits));
   const previousOwner = destination.owner;
   origin.fleetUnits = 1;
 
-  if (expectedSurvivors > destination.fleetUnits) {
+  if (battle.captured) {
     destination.owner = faction;
-    destination.fleetUnits = expectedSurvivors - destination.fleetUnits;
+    destination.fleetUnits = battle.attackersRemaining;
     return {
       title: `${getFactionName(faction)} Captures ${destination.name}`,
       detail: `${committed} units crossed from ${origin.name}. ${destination.name} changed hands from ${getFactionName(previousOwner)}.`,
@@ -508,7 +684,7 @@ function resolveNpcAttack(faction: FactionId, origin: StarSystem, destination: S
     };
   }
 
-  destination.fleetUnits = Math.max(0, destination.fleetUnits - expectedSurvivors);
+  destination.fleetUnits = battle.defendersRemaining;
   return {
     title: `${getFactionName(faction)} Pressures ${destination.name}`,
     detail: `${committed} units crossed from ${origin.name}. ${destination.name} holds with ${destination.fleetUnits} units.`,
@@ -518,8 +694,11 @@ function resolveNpcAttack(faction: FactionId, origin: StarSystem, destination: S
   };
 }
 
-function expectedNpcSurvivors(origin: StarSystem) {
-  return Math.floor(Math.max(0, origin.fleetUnits - 1) * npcAttackEfficiency);
+function npcBattleScore(origin: StarSystem, destination: StarSystem) {
+  const attackingUnits = Math.max(0, origin.fleetUnits - 1);
+  const defenderUnits = Math.max(0, destination.fleetUnits);
+  const seed = stableBattleSeed(origin.id, destination.id, attackingUnits, defenderUnits);
+  return estimateBattleWinChance(attackingUnits, defenderUnits, seed);
 }
 
 function borderPressure(system: StarSystem, faction: FactionId) {
@@ -540,6 +719,80 @@ function difficultyForDestination(destination: StarSystem) {
     return "normal";
   }
   return "easy";
+}
+
+function resolveStrategicBattle(attackingUnitsInput: number, defenderUnitsInput: number, rng: () => number = Math.random) {
+  let attackersRemaining = Math.max(0, Math.floor(attackingUnitsInput));
+  let defendersRemaining = Math.max(0, Math.floor(defenderUnitsInput));
+
+  while (attackersRemaining > 0 && defendersRemaining > 0) {
+    const attackerDice = rollBattleDice(Math.min(3, attackersRemaining), rng);
+    const defenderDice = rollBattleDice(Math.min(2, defendersRemaining), rng);
+    const comparisons = Math.min(attackerDice.length, defenderDice.length);
+
+    for (let index = 0; index < comparisons; index += 1) {
+      if (attackerDice[index] > defenderDice[index]) {
+        defendersRemaining -= 1;
+      } else {
+        attackersRemaining -= 1;
+      }
+
+      if (attackersRemaining <= 0 || defendersRemaining <= 0) {
+        break;
+      }
+    }
+  }
+
+  return {
+    captured: attackersRemaining > 0 && defendersRemaining <= 0,
+    attackersRemaining,
+    defendersRemaining
+  };
+}
+
+function estimateBattleWinChance(attackingUnits: number, defenderUnits: number, seed: number) {
+  if (attackingUnits <= 0) {
+    return 0;
+  }
+  if (defenderUnits <= 0) {
+    return 1;
+  }
+
+  const trials = 180;
+  let wins = 0;
+  const rng = createSeededRng(seed);
+  for (let index = 0; index < trials; index += 1) {
+    if (resolveStrategicBattle(attackingUnits, defenderUnits, rng).captured) {
+      wins += 1;
+    }
+  }
+  return clamp(wins / trials, 0.02, 0.98);
+}
+
+function rollBattleDice(count: number, rng: () => number) {
+  return Array.from({ length: count }, () => 1 + Math.floor(rng() * 6)).sort((a, b) => b - a);
+}
+
+function stableBattleSeed(originId: string, destinationId: string, attackingUnits: number, defenderUnits: number) {
+  const source = `${originId}:${destinationId}:${attackingUnits}:${defenderUnits}`;
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function createSeededRng(seed: number) {
+  let value = seed >>> 0;
+  return () => {
+    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
+    return value / 4294967296;
+  };
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
 }
 
 function checkVictoryState() {
