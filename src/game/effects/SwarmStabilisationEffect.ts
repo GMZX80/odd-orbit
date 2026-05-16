@@ -33,9 +33,9 @@ export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOp
   const previousPalette = factionThemes[effect.destinationOwnerBefore];
   const playerPalette = factionThemes.player;
   const overlay = scene.add.container(0, 0).setDepth(1400);
-  const streamSourceCount = isAutoBattle ? Math.max(1, effect.attackingUnitsCommitted) : rawRunnerSpheres;
-  const densityScale = Phaser.Math.Clamp(streamSourceCount / (isAutoBattle ? 40 : 600), 0.45, isAutoBattle ? 1.45 : 1.9);
-  const visibleArrivalSpheres = isAutoBattle ? Math.min(streamSourceCount, successfulArrival ? 90 : 42) : Math.min(rawRunnerSpheres, successfulArrival ? 180 : 18);
+  const streamSourceCount = isAutoBattle ? Math.max(effect.attackingUnitsCommitted, rawRunnerSpheres) : rawRunnerSpheres;
+  const densityScale = Phaser.Math.Clamp(streamSourceCount / (isAutoBattle ? 90 : 600), 0.45, isAutoBattle ? 1.55 : 1.9);
+  const visibleArrivalSpheres = isAutoBattle ? Math.min(streamSourceCount, successfulArrival ? 120 : 24) : Math.min(rawRunnerSpheres, successfulArrival ? 180 : 18);
   const visibleSettledUnits = Math.min(effect.destinationUnitsAfter, 34);
   const camera = scene.cameras.main;
   const startZoom = camera.zoom;
@@ -126,18 +126,16 @@ function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Cont
   const captured = effect.destinationOwnerAfter === "player" && effect.destinationUnitsAfter > 0 && effect.outcome !== "failed" && effect.outcome !== "repelled";
   const borderColor = captured ? stableBlue : 0xff6d75;
   const subtitle =
-    effect.resolutionMode === "play"
-      ? captured
-        ? `${effect.rawRunnerSpheres ?? 0} swarm -> ${effect.convertedStrategicUnits} units`
-        : "No units arrive"
-      : captured
-        ? `${effect.attackingUnitsCommitted} attack -> ${effect.attackingUnitsSurvived} survive`
-        : `${effect.attackingUnitsCommitted} vs ${effect.defenderUnitsBefore} - Defence ${effect.defenderUnitsAfter}`;
+    captured
+      ? `1 seed -> ${effect.rawRunnerSpheres ?? 0} swarm\n${effect.rawRunnerSpheres ?? 0} swarm -> ${effect.convertedStrategicUnits} units`
+      : effect.resolutionMode === "auto"
+        ? `1 seed lost\nDefence ${effect.defenderUnitsAfter} holds`
+        : "1 seed lost\nNo units arrive";
 
   const badge = scene.add.container(badgeX, badgeY);
-  const background = scene.add.rectangle(0, 0, 178, 48, 0x07131d, 0.9).setStrokeStyle(2, borderColor, 0.8);
+  const background = scene.add.rectangle(0, 0, 188, 62, 0x07131d, 0.9).setStrokeStyle(2, borderColor, 0.8);
   const title = scene.add
-    .text(0, -14, effect.summaryLabel, {
+    .text(0, -20, effect.summaryLabel, {
       color: "#f7fbff",
       fontFamily: "Inter, sans-serif",
       fontSize: "13px",
@@ -145,11 +143,13 @@ function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Cont
     })
     .setOrigin(0.5);
   const detail = scene.add
-    .text(0, 10, subtitle, {
+    .text(0, 6, subtitle, {
       color: captured ? "#8ee7ff" : "#ffb0b6",
       fontFamily: "Inter, sans-serif",
-      fontSize: "10px",
-      fontStyle: "900"
+      fontSize: "9.5px",
+      fontStyle: "900",
+      align: "center",
+      lineSpacing: 2
     })
     .setOrigin(0.5);
 

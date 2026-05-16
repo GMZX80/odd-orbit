@@ -81,6 +81,7 @@ export interface StrategicArrivalEffect {
   attackingUnitsSurvived: number;
   rawRunnerSpheres?: number;
   convertedStrategicUnits: number;
+  autoSuccessChance?: number;
   defenderUnitsBefore: number;
   defenderUnitsAfter: number;
   destinationUnitsAfter: number;

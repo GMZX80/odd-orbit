@@ -6,6 +6,7 @@ import type {
   GalaxyAction,
   GalaxyResolution,
   MoveOrder,
+  RouteDifficulty,
   StarSystem,
   StrategicArrivalEffect,
   StrategicArrivalOutcome,
@@ -86,11 +87,7 @@ export function deployToSystem(systemId: string) {
   pushLog("player", `Deployed 1 fleet unit to ${system.name}.`);
 
   if (deploymentUnitsRemaining <= 0) {
-    turnPhase = "command";
-    lastResolution = {
-      title: "Command Phase",
-      detail: "Select a blue origin system and a connected non-blue sector for a one-seed incursion."
-    };
+    enterFortifyPhase();
   } else {
     lastResolution = {
       title: "Player Deployment",
@@ -107,11 +104,7 @@ export function skipDeployment() {
   }
 
   deploymentUnitsRemaining = 0;
-  turnPhase = "command";
-  lastResolution = {
-    title: "Command Phase",
-    detail: "Select a blue origin system and a connected non-blue sector for a one-seed incursion."
-  };
+  enterFortifyPhase();
   return true;
 }
 
@@ -170,10 +163,10 @@ export function skipCommand() {
   }
 
   commandUsed = true;
-  turnPhase = "fortify";
+  endPlayerTurn();
   lastResolution = {
-    title: "Fortify Phase",
-    detail: "Optionally move fleet units between connected blue systems."
+    title: "Command Skipped",
+    detail: "No incursion launched this turn."
   };
   pushLog("player", "Skipped command phase.");
   return true;
@@ -213,7 +206,7 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       outcome: "failed",
       summaryLabel: "WORMHOLE FAILED"
     });
-    enterFortifyPhase();
+    endPlayerTurn();
     return;
   }
 
@@ -242,7 +235,7 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       outcome: "neutralCaptured",
       summaryLabel: "WORMHOLE WIN"
     });
-    enterFortifyPhase();
+    endPlayerTurn();
     checkVictoryState();
     return;
   }
@@ -271,7 +264,7 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
       summaryLabel: "WORMHOLE WIN"
     });
     pushLog("player", lastResolution.detail);
-    enterFortifyPhase();
+    endPlayerTurn();
     checkVictoryState();
     return;
   }
@@ -297,18 +290,24 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
     outcome: "neutralCaptured",
     summaryLabel: "WORMHOLE WIN"
   });
-  enterFortifyPhase();
+  endPlayerTurn();
 }
 
-export function estimateStrategicBattleOdds(originSystemId: string, destinationSystemId: string) {
+export function estimateAutoIncursionChance(originSystemId: string, destinationSystemId: string) {
   const origin = findSystem(originSystemId);
   const destination = findSystem(destinationSystemId);
-  if (!origin || !destination || origin.owner !== "player" || destination.owner === "player" || !origin.neighbours.includes(destination.id)) {
+  if (
+    !origin ||
+    !destination ||
+    origin.owner !== "player" ||
+    destination.owner === "player" ||
+    !origin.neighbours.includes(destination.id) ||
+    origin.fleetUnits < 2
+  ) {
     return 0;
   }
 
-  const attackingUnits = Math.max(0, origin.fleetUnits - 1);
-  return estimateBattleWinChance(attackingUnits, Math.max(0, destination.fleetUnits), stableBattleSeed(origin.id, destination.id, attackingUnits, destination.fleetUnits));
+  return calculateAutoIncursionChance(origin, destination);
 }
 
 export function autoResolveStrategicBattle(originSystemId: string, destinationSystemId: string) {
@@ -332,31 +331,35 @@ export function autoResolveStrategicBattle(originSystemId: string, destinationSy
   const destinationOwnerBefore = destination.owner;
   const originUnitsBefore = origin.fleetUnits;
   const defenderUnitsBefore = destination.fleetUnits;
-  const attackingUnitsCommitted = Math.max(0, origin.fleetUnits - 1);
-  let attackingUnits = attackingUnitsCommitted;
-  let defenderUnits = Math.max(0, defenderUnitsBefore);
+  const routeDifficulty = difficultyForDestination(destination);
+  const destinationFactionColor = routeEnemyThemeForFaction(destinationOwnerBefore).fill;
+  const seedUnitsCommitted = 1;
+  const successChance = calculateAutoIncursionChance(origin, destination);
+  const effectiveDefence = calculateEffectiveDefence(destination);
 
-  origin.fleetUnits = 1;
+  origin.fleetUnits -= seedUnitsCommitted;
   commandUsed = true;
 
-  const battle = resolveStrategicBattle(attackingUnits, defenderUnits);
-  attackingUnits = battle.attackersRemaining;
-  defenderUnits = battle.defendersRemaining;
-  const captured = battle.captured;
+  const captured = Math.random() < successChance;
   const outcome: StrategicArrivalOutcome = captured ? (destinationOwnerBefore === "neutral" ? "neutralCaptured" : "enemyCaptured") : "repelled";
+  const autoRawSwarm = captured ? generateAutoRawSwarm(originUnitsBefore, defenderUnitsBefore, destination, effectiveDefence) : 0;
+  const generatedStrategicUnits = captured
+    ? convertRunnerSpheresToStrategicUnits(autoRawSwarm, {
+        maxStrategicUnitsFromRun: 18
+      })
+    : 0;
 
   if (captured) {
     destination.owner = "player";
-    destination.fleetUnits = attackingUnits;
+    destination.fleetUnits = generatedStrategicUnits;
     lastResolution = {
-      title: "Auto Win",
-      detail: `${attackingUnitsCommitted} fleet units crossed. ${attackingUnits} survived.`
+      title: "Auto Incursion",
+      detail: `1 seed unit generated ${autoRawSwarm} unstable swarm, stabilising ${generatedStrategicUnits} units at ${destination.name}.`
     };
   } else {
-    destination.fleetUnits = defenderUnits;
     lastResolution = {
       title: "Repelled",
-      detail: `${attackingUnitsCommitted} fleet units attacked. ${defenderUnits} defenders held.`
+      detail: `The auto incursion lost its seed unit. ${destination.name} held with ${destination.fleetUnits} defenders.`
     };
   }
   pushLog("player", lastResolution.detail);
@@ -365,26 +368,27 @@ export function autoResolveStrategicBattle(originSystemId: string, destinationSy
     input: {
       originSystemId: origin.id,
       destinationSystemId: destination.id,
-      startingUnits: attackingUnitsCommitted,
-      routeDifficulty: difficultyForDestination(destination),
+      startingUnits: seedUnitsCommitted,
+      routeDifficulty,
       destinationFactionId: destinationOwnerBefore,
-      destinationFactionColor: routeEnemyThemeForFaction(destinationOwnerBefore).fill
+      destinationFactionColor
     },
     resolutionMode: "auto",
-    rawRunnerSpheres: 0,
-    convertedStrategicUnits: captured ? attackingUnits : 0,
+    rawRunnerSpheres: autoRawSwarm,
+    convertedStrategicUnits: generatedStrategicUnits,
+    autoSuccessChance: successChance,
     originUnitsBefore,
     originUnitsAfter: origin.fleetUnits,
-    attackingUnitsCommitted,
-    attackingUnitsSurvived: captured ? attackingUnits : 0,
+    attackingUnitsCommitted: seedUnitsCommitted,
+    attackingUnitsSurvived: generatedStrategicUnits,
     defenderUnitsBefore,
     destinationOwnerBefore,
     destination,
     outcome,
-    summaryLabel: captured ? "AUTO WIN" : "REPELLED"
+    summaryLabel: captured ? "AUTO INCURSION" : "REPELLED"
   });
 
-  enterFortifyPhase();
+  endPlayerTurn();
   checkVictoryState();
   return effect;
 }
@@ -394,6 +398,7 @@ function setStrategicArrivalEffect(params: {
   resolutionMode: "play" | "auto";
   rawRunnerSpheres?: number;
   convertedStrategicUnits: number;
+  autoSuccessChance?: number;
   originUnitsBefore: number;
   originUnitsAfter: number;
   attackingUnitsCommitted: number;
@@ -409,6 +414,7 @@ function setStrategicArrivalEffect(params: {
     resolutionMode,
     rawRunnerSpheres,
     convertedStrategicUnits,
+    autoSuccessChance,
     originUnitsBefore,
     originUnitsAfter,
     attackingUnitsCommitted,
@@ -431,6 +437,7 @@ function setStrategicArrivalEffect(params: {
     attackingUnitsSurvived,
     rawRunnerSpheres,
     convertedStrategicUnits,
+    autoSuccessChance,
     defenderUnitsBefore,
     defenderUnitsAfter: destination.fleetUnits,
     destinationUnitsAfter: destination.fleetUnits,
@@ -447,7 +454,6 @@ export function canFortifyMove(originSystemId: string, destinationSystemId: stri
 
   return Boolean(
     turnPhase === "fortify" &&
-      !fortifyUsed &&
       origin &&
       destination &&
       origin.owner === "player" &&
@@ -477,6 +483,19 @@ export function executeFortify(originSystemId: string, destinationSystemId: stri
     detail: `${unitsCommitted} fleet units moved from ${origin.name} to ${destination.name}.`
   };
   pushLog("player", lastResolution.detail);
+  return true;
+}
+
+export function finishFortifyPhase() {
+  if (turnPhase !== "fortify") {
+    return false;
+  }
+
+  turnPhase = "command";
+  lastResolution = {
+    title: "Command Phase",
+    detail: "Select a blue origin system and a connected non-blue sector for a one-seed incursion."
+  };
   return true;
 }
 
@@ -571,8 +590,8 @@ function beginPlayerTurn() {
 function enterFortifyPhase() {
   turnPhase = "fortify";
   lastResolution = {
-    title: lastResolution?.title ?? "Fortify Phase",
-    detail: `${lastResolution?.detail ?? ""} You may now redeploy once between connected blue systems.`
+    title: "Redeploy Phase",
+    detail: "Optionally move fleet units between connected blue systems."
   };
 }
 
@@ -721,6 +740,65 @@ function difficultyForDestination(destination: StarSystem) {
   return "easy";
 }
 
+function calculateAutoIncursionChance(origin: StarSystem, destination: StarSystem) {
+  const effectiveDefence = calculateEffectiveDefence(destination);
+  const originSupportBonus = Math.min(0.12, Math.sqrt(Math.max(0, origin.fleetUnits)) * 0.025);
+  const neutralBonus = destination.owner === "neutral" ? 0.1 : 0;
+  const fortressPenalty = destination.systemType === "fortress" ? 0.1 : 0;
+
+  return clamp(0.78 - effectiveDefence * 0.035 + originSupportBonus + neutralBonus - fortressPenalty, 0.12, 0.88);
+}
+
+function calculateEffectiveDefence(destination: StarSystem) {
+  const routeDifficulty = difficultyForDestination(destination);
+  const routeModifier = routeDifficultyModifier(routeDifficulty);
+  const ownerModifier = destination.owner === "neutral" ? 0.75 : 1;
+  const systemModifier = systemTypeModifier(destination);
+
+  return Math.max(0, destination.fleetUnits) * routeModifier * ownerModifier * systemModifier;
+}
+
+function routeDifficultyModifier(routeDifficulty: RouteDifficulty) {
+  switch (routeDifficulty) {
+    case "easy":
+      return 0.85;
+    case "hard":
+      return 1.25;
+    case "normal":
+    default:
+      return 1;
+  }
+}
+
+function systemTypeModifier(destination: StarSystem) {
+  switch (destination.systemType) {
+    case "frontier":
+      return 0.9;
+    case "rift":
+      return 1.1;
+    case "core":
+      return 1.15;
+    case "fortress":
+      return 1.3;
+    case "mining":
+    default:
+      return 1;
+  }
+}
+
+function generateAutoRawSwarm(originUnitsBefore: number, defenderUnitsBefore: number, destination: StarSystem, effectiveDefence: number) {
+  const routeDifficulty = difficultyForDestination(destination);
+  const originSupport = Math.sqrt(Math.max(1, originUnitsBefore)) * 3;
+  const defenceReward = Math.sqrt(Math.max(0, defenderUnitsBefore)) * 2.6;
+  const difficultyPenalty = routeDifficulty === "hard" ? 10 : routeDifficulty === "normal" ? 5 : 0;
+  const neutralLift = destination.owner === "neutral" ? 8 : 0;
+  const fortressPenalty = destination.systemType === "fortress" ? 6 : 0;
+  const randomSwing = randomInt(-6, 18);
+  const rawSwarm = Math.round(10 + originSupport + defenceReward + neutralLift + randomSwing - effectiveDefence * 0.45 - difficultyPenalty - fortressPenalty);
+
+  return Math.round(clamp(rawSwarm, 1, 120));
+}
+
 function resolveStrategicBattle(attackingUnitsInput: number, defenderUnitsInput: number, rng: () => number = Math.random) {
   let attackersRemaining = Math.max(0, Math.floor(attackingUnitsInput));
   let defendersRemaining = Math.max(0, Math.floor(defenderUnitsInput));
@@ -789,6 +867,10 @@ function createSeededRng(seed: number) {
     value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
     return value / 4294967296;
   };
+}
+
+function randomInt(min: number, max: number) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 function clamp(value: number, min: number, max: number) {
