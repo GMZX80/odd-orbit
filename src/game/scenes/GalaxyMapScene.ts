@@ -19,7 +19,7 @@ import {
   skipDeployment
 } from "../systems/galaxyState";
 import { factionThemes } from "../systems/factionTheme";
-import type { Constellation, FactionId, GalaxyAction, StarSystem } from "../systems/galaxyTypes";
+import type { Constellation, FactionId, GalaxyAction, StarSystem, StrategicArrivalEffect } from "../systems/galaxyTypes";
 
 const ownerPalette: Record<FactionId, { fill: number; stroke: number; label: string }> = {
   player: { fill: factionThemes.player.mapFill, stroke: factionThemes.player.mapStroke, label: factionThemes.player.label },
@@ -30,6 +30,13 @@ const ownerPalette: Record<FactionId, { fill: number; stroke: number; label: str
 };
 
 type GalaxySnapshot = ReturnType<typeof getGalaxySnapshot>;
+type DirectionalAttackOptions = {
+  sourceColor?: number;
+  beamColor?: number;
+  impactColor?: number;
+  sourceRadius?: number;
+  targetRadius?: number;
+};
 
 const mapLeftX = 82;
 const mapScaleX = 0.78;
@@ -75,18 +82,33 @@ export class GalaxyMapScene extends Phaser.Scene {
   private render() {
     this.children.removeAll(true);
     const snapshot = getGalaxySnapshot();
+    const cinematicMode = this.isCinematicMode();
     this.drawBackground();
     this.drawConstellations(snapshot.systems, snapshot.constellations);
-    this.drawPhaseHud(snapshot);
+    if (!cinematicMode) {
+      this.drawPhaseHud(snapshot);
+    }
     this.drawStarlanes(snapshot.systems);
     this.drawSystems(snapshot);
-    this.drawActionBadge(snapshot);
-    this.drawCommandStrip(snapshot);
-    this.drawDebugLog(snapshot);
+    if (cinematicMode) {
+      this.drawCinematicShade();
+    } else {
+      this.drawActionBadge(snapshot);
+      this.drawCommandStrip(snapshot);
+      this.drawDebugLog(snapshot);
+    }
     if (snapshot.turnPhase === "gameOver") {
       this.drawGameOver(snapshot);
     }
     this.maybeProcessNpcTurn();
+  }
+
+  private isCinematicMode() {
+    return this.arrivalEffectPlaying || this.strategyAnimationPlaying;
+  }
+
+  private drawCinematicShade() {
+    this.add.rectangle(195, 360, 390, 720, 0x020913, 0.34).setDepth(20);
   }
 
   private drawBackground() {
@@ -366,14 +388,16 @@ export class GalaxyMapScene extends Phaser.Scene {
     }
 
     if (snapshot.turnPhase === "command") {
+      if (origin && destination) {
+        this.drawAttackChoice(origin, destination);
+        return;
+      }
       this.drawButton(302, 674, 66, 28, "End", () => {
         skipCommand();
         this.clearSelection();
         this.render();
       });
-      if (origin && destination) {
-        this.drawAttackChoice(origin, destination);
-      } else if (origin) {
+      if (origin) {
         this.drawButton(22, 674, 68, 28, "Cancel", () => {
           this.clearSelection();
           this.render();
@@ -409,11 +433,11 @@ export class GalaxyMapScene extends Phaser.Scene {
 
   private drawAttackChoice(origin: StarSystem, destination: StarSystem) {
     const odds = Math.round(estimateAutoIncursionChance(origin.id, destination.id) * 100);
-    const midX = Phaser.Math.Clamp((this.mapX(origin.x) + this.mapX(destination.x)) / 2 + 22, 120, 286);
-    const midY = Phaser.Math.Clamp((this.mapY(origin.y) + this.mapY(destination.y)) / 2 + 52, 430, 620);
-    this.add.rectangle(midX, midY, 232, 98, 0x07131d, 0.9).setStrokeStyle(2, 0x66f2a8, 0.58).setDepth(58);
+    const panelCx = 235;
+    const panelCy = 620;
+    this.add.rectangle(panelCx, panelCy, 300, 96, 0x07131d, 0.92).setStrokeStyle(2, 0x66f2a8, 0.58).setDepth(58);
     this.add
-      .text(midX, midY - 30, `${origin.name}  ->  ${destination.name}`, {
+      .text(panelCx, panelCy - 30, `${origin.name}  ->  ${destination.name}`, {
         color: "#ffe66f",
         fontFamily: "Inter, sans-serif",
         fontSize: "13px",
@@ -421,8 +445,13 @@ export class GalaxyMapScene extends Phaser.Scene {
       })
       .setOrigin(0.5)
       .setDepth(62);
-    this.drawButton(midX - 106, midY - 2, 96, 38, "Play", () => this.launchMove(), "primary");
-    this.drawButton(midX + 10, midY - 2, 96, 38, `Auto ${odds}%`, () => this.autoResolveMove(), "secondary");
+    this.drawButton(94, 642, 76, 36, "Cancel", () => {
+      this.destinationSystemId = undefined;
+      this.fortifyUnitsToMove = undefined;
+      this.render();
+    }, "ghost");
+    this.drawButton(180, 642, 76, 36, "Play", () => this.launchMove(), "primary");
+    this.drawButton(266, 642, 88, 36, `Auto ${odds}%`, () => this.autoResolveMove(), "secondary");
     this.drawRouteArrow(origin, destination, 0x66f2a8);
   }
 
@@ -458,17 +487,71 @@ export class GalaxyMapScene extends Phaser.Scene {
     const units = this.normalizedFortifyUnits(origin.fleetUnits, maxMovable);
     const panelCx = 235;
     const sliderX = 108;
-    const sliderY = 618;
+    const sliderY = 653;
     const sliderW = 254;
     const ratio = maxMovable <= 1 ? 1 : (units - 1) / (maxMovable - 1);
 
-    this.drawBottomSheet(148, 0x7ee4ff);
-    this.add.rectangle(panelCx, 574, 34, 4, 0x7ee4ff, 0.72).setDepth(59);
+    this.drawBottomSheet(208, 0x7ee4ff);
+    this.add.rectangle(panelCx, 516, 34, 4, 0x7ee4ff, 0.72).setDepth(59);
     this.add
-      .text(panelCx, 604, String(units), {
+      .text(panelCx, 534, "FORTIFY", {
+        color: "#5da8ff",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "11px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx, 560, "Redeploy Units", {
         color: "#f7fbff",
         fontFamily: "Inter, sans-serif",
-        fontSize: "48px",
+        fontSize: "24px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx - 44, 588, origin.name, {
+        color: "#ffe66f",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "14px",
+        fontStyle: "900"
+      })
+      .setOrigin(1, 0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx, 588, "->", {
+        color: "#66f2a8",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "17px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx + 44, 588, destination.name, {
+        color: "#66f2a8",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "14px",
+        fontStyle: "900"
+      })
+      .setOrigin(0, 0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx, 625, String(units), {
+        color: "#f7fbff",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "46px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setDepth(72);
+    this.add
+      .text(panelCx, 657, "units", {
+        color: "#9fb7c7",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "15px",
         fontStyle: "900"
       })
       .setOrigin(0.5)
@@ -487,12 +570,12 @@ export class GalaxyMapScene extends Phaser.Scene {
         this.setFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
       }
     });
-    this.drawButton(100, 672, 120, 36, "Cancel", () => {
+    this.drawButton(100, 684, 120, 32, "Cancel", () => {
       this.destinationSystemId = undefined;
       this.fortifyUnitsToMove = undefined;
       this.render();
     }, "ghost");
-    this.drawButton(250, 672, 120, 36, "Redeploy", () => this.executeSelectedFortify(), "primary");
+    this.drawButton(250, 684, 120, 32, "Redeploy", () => this.executeSelectedFortify(), "primary");
     this.drawRouteArrow(origin, destination, 0x7ee4ff);
   }
 
@@ -676,16 +759,21 @@ export class GalaxyMapScene extends Phaser.Scene {
       return;
     }
 
-    this.animateStrategicAttack(attack.origin, attack.destination, () => {
-      const effect = autoResolveStrategicBattle(attack.origin.id, attack.destination.id);
-      this.finishStrategicAttackAnimation();
-      if (effect) {
-        this.render();
-        this.playPendingArrivalEffect();
-      } else {
-        this.render();
-      }
-    });
+    this.clearSelection();
+    this.strategyAnimationPlaying = true;
+    this.arrivalEffectPlaying = true;
+    const effect = autoResolveStrategicBattle(attack.origin.id, attack.destination.id);
+    this.strategyAnimationPlaying = false;
+
+    if (effect) {
+      consumePendingStrategicArrivalEffect();
+      this.render();
+      this.playStrategicArrivalEffect(effect);
+      return;
+    }
+
+    this.arrivalEffectPlaying = false;
+    this.render();
   }
 
   private executeSelectedFortify() {
@@ -774,13 +862,256 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.clearSelection();
     this.strategyAnimationPlaying = true;
     this.render();
-    this.animateRouteTransfer(origin, destination, "player", onComplete);
+    this.playDirectionalAttackAnimation(origin, destination, {}, onComplete);
   }
 
   private finishStrategicAttackAnimation() {
     this.strategyAnimationPlaying = false;
     this.activeAction = undefined;
     this.clearSelection();
+  }
+
+  private playDirectionalAttackAnimation(
+    origin: StarSystem,
+    destination: StarSystem,
+    options: DirectionalAttackOptions,
+    onComplete: () => void
+  ) {
+    const source = new Phaser.Math.Vector2(this.mapX(origin.x), this.mapY(origin.y));
+    const target = new Phaser.Math.Vector2(this.mapX(destination.x), this.mapY(destination.y));
+    const delta = target.clone().subtract(source);
+    const distance = delta.length();
+    if (distance <= 0) {
+      this.time.delayedCall(120, onComplete);
+      return;
+    }
+
+    const direction = delta.clone().normalize();
+    const angle = Phaser.Math.Angle.Between(source.x, source.y, target.x, target.y);
+    const sourceRadius = options.sourceRadius ?? 22;
+    const targetRadius = options.targetRadius ?? 23;
+    const sourceColor = options.sourceColor ?? 0x28c9ff;
+    const beamColor = options.beamColor ?? 0x6eeeff;
+    const impactColor = options.impactColor ?? 0xffd45f;
+    const overlay = this.add.container(0, 0).setDepth(132);
+
+    this.createSourceChargeEffect(overlay, source, sourceColor, sourceRadius);
+    this.time.delayedCall(260, () => {
+      this.createAttackTrailEffect(overlay, source, target, angle, beamColor);
+      this.createDirectionalArrowParticles(overlay, source, target, angle, beamColor, impactColor);
+    });
+    this.time.delayedCall(860, () => {
+      this.createTargetImpactEffect(overlay, target, direction, impactColor, targetRadius);
+    });
+    this.time.delayedCall(1120, () => {
+      this.pulseTargetAftermath(overlay, target, impactColor, targetRadius);
+    });
+    this.time.delayedCall(1480, () => {
+      overlay.destroy(true);
+      onComplete();
+    });
+  }
+
+  private createSourceChargeEffect(overlay: Phaser.GameObjects.Container, source: Phaser.Math.Vector2, color: number, radius: number) {
+    const core = this.add.circle(source.x, source.y, radius + 6, color, 0.18).setStrokeStyle(2.5, color, 0.75);
+    overlay.add(core);
+    this.tweens.add({
+      targets: core,
+      alpha: 0.42,
+      scale: 1.18,
+      yoyo: true,
+      repeat: 1,
+      duration: 170,
+      ease: "Sine.easeInOut"
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      const ring = this.add.circle(source.x, source.y, radius + 2, color, 0.16).setStrokeStyle(2.4, color, 0.84);
+      overlay.add(ring);
+      this.tweens.add({
+        targets: ring,
+        alpha: 0,
+        scale: 1.9 + index * 0.22,
+        delay: index * 95,
+        duration: 500,
+        ease: "Quad.easeOut",
+        onComplete: () => ring.destroy()
+      });
+    }
+
+    for (let index = 0; index < 18; index += 1) {
+      const sparkAngle = (Math.PI * 2 * index) / 18 + Phaser.Math.FloatBetween(-0.18, 0.18);
+      const sparkDistance = Phaser.Math.Between(22, 42);
+      const spark = this.add.circle(source.x, source.y, Phaser.Math.FloatBetween(1.2, 2.4), 0xd9f7ff, 0.9);
+      overlay.add(spark);
+      this.tweens.add({
+        targets: spark,
+        x: source.x + Math.cos(sparkAngle) * sparkDistance,
+        y: source.y + Math.sin(sparkAngle) * sparkDistance,
+        alpha: 0,
+        scale: 0.2,
+        delay: Phaser.Math.Between(0, 130),
+        duration: 380,
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy()
+      });
+    }
+  }
+
+  private createAttackTrailEffect(
+    overlay: Phaser.GameObjects.Container,
+    source: Phaser.Math.Vector2,
+    target: Phaser.Math.Vector2,
+    angle: number,
+    color: number
+  ) {
+    const glow = this.add.line(0, 0, source.x, source.y, target.x, target.y, color, 0.28).setOrigin(0, 0).setLineWidth(9);
+    const core = this.add.line(0, 0, source.x, source.y, target.x, target.y, 0xf7fbff, 0.82).setOrigin(0, 0).setLineWidth(2.5);
+    const leading = this.add.rectangle(source.x, source.y, 26, 5, 0xf7fbff, 0.9).setRotation(angle);
+    overlay.add([glow, core, leading]);
+
+    this.tweens.add({
+      targets: [glow, core],
+      alpha: 0,
+      delay: 460,
+      duration: 360,
+      ease: "Quad.easeOut",
+      onComplete: () => {
+        glow.destroy();
+        core.destroy();
+      }
+    });
+    this.tweens.add({
+      targets: leading,
+      x: target.x,
+      y: target.y,
+      alpha: 0,
+      scaleX: 1.6,
+      duration: 560,
+      ease: "Cubic.easeIn",
+      onComplete: () => leading.destroy()
+    });
+  }
+
+  private createDirectionalArrowParticles(
+    overlay: Phaser.GameObjects.Container,
+    source: Phaser.Math.Vector2,
+    target: Phaser.Math.Vector2,
+    angle: number,
+    beamColor: number,
+    impactColor: number
+  ) {
+    for (let index = 0; index < 7; index += 1) {
+      const startT = 0.06 + index * 0.055;
+      const start = this.pointOnAttackPath(source, target, startT);
+      const arrow = this.add.triangle(start.x, start.y, 0, -5.5, 18, 0, 0, 5.5, index > 4 ? impactColor : beamColor, 0.92).setRotation(angle);
+      overlay.add(arrow);
+      this.tweens.add({
+        targets: arrow,
+        x: target.x,
+        y: target.y,
+        alpha: 0,
+        scale: 1.18,
+        delay: index * 52,
+        duration: 540,
+        ease: "Cubic.easeIn",
+        onComplete: () => arrow.destroy()
+      });
+    }
+
+    for (let index = 0; index < 28; index += 1) {
+      const startT = Phaser.Math.FloatBetween(0.02, 0.42);
+      const endT = Phaser.Math.FloatBetween(0.72, 1);
+      const start = this.pointOnAttackPath(source, target, startT);
+      const end = this.pointOnAttackPath(source, target, endT);
+      const particle = this.add.circle(start.x, start.y, Phaser.Math.FloatBetween(1, 2.1), index % 5 === 0 ? 0xf7fbff : beamColor, 0.8);
+      overlay.add(particle);
+      this.tweens.add({
+        targets: particle,
+        x: end.x,
+        y: end.y,
+        alpha: 0,
+        scale: 0.35,
+        delay: Phaser.Math.Between(0, 330),
+        duration: Phaser.Math.Between(430, 690),
+        ease: "Quad.easeIn",
+        onComplete: () => particle.destroy()
+      });
+    }
+  }
+
+  private createTargetImpactEffect(
+    overlay: Phaser.GameObjects.Container,
+    target: Phaser.Math.Vector2,
+    direction: Phaser.Math.Vector2,
+    color: number,
+    radius: number
+  ) {
+    const impactPoint = target.clone().subtract(direction.clone().scale(radius - 1));
+    const flash = this.add.circle(impactPoint.x, impactPoint.y, 11, 0xf7fbff, 0.98).setStrokeStyle(2.5, color, 0.94);
+    overlay.add(flash);
+    this.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scale: 2.8,
+      duration: 320,
+      ease: "Quad.easeOut",
+      onComplete: () => flash.destroy()
+    });
+
+    for (let index = 0; index < 3; index += 1) {
+      const shockwave = this.add.circle(target.x, target.y, radius + 2, color, 0.12).setStrokeStyle(2.4, color, 0.82);
+      overlay.add(shockwave);
+      this.tweens.add({
+        targets: shockwave,
+        alpha: 0,
+        scale: 1.65 + index * 0.3,
+        delay: index * 85,
+        duration: 560,
+        ease: "Quad.easeOut",
+        onComplete: () => shockwave.destroy()
+      });
+    }
+
+    const reboundAngle = Phaser.Math.Angle.Between(direction.x, direction.y, 0, 0);
+    for (let index = 0; index < 24; index += 1) {
+      const spread = Phaser.Math.FloatBetween(-0.9, 0.9);
+      const sparkAngle = reboundAngle + spread;
+      const sparkDistance = Phaser.Math.Between(16, 52);
+      const spark = this.add.circle(impactPoint.x, impactPoint.y, Phaser.Math.FloatBetween(1.2, 2.7), index % 4 === 0 ? 0xf7fbff : color, 0.88);
+      overlay.add(spark);
+      this.tweens.add({
+        targets: spark,
+        x: impactPoint.x + Math.cos(sparkAngle) * sparkDistance,
+        y: impactPoint.y + Math.sin(sparkAngle) * sparkDistance,
+        alpha: 0,
+        scale: 0.28,
+        delay: Phaser.Math.Between(0, 70),
+        duration: Phaser.Math.Between(340, 620),
+        ease: "Cubic.easeOut",
+        onComplete: () => spark.destroy()
+      });
+    }
+  }
+
+  private pulseTargetAftermath(overlay: Phaser.GameObjects.Container, target: Phaser.Math.Vector2, color: number, radius: number) {
+    for (let index = 0; index < 2; index += 1) {
+      const pulse = this.add.circle(target.x, target.y, radius + 4, color, 0.1).setStrokeStyle(2.2, color, 0.68);
+      overlay.add(pulse);
+      this.tweens.add({
+        targets: pulse,
+        alpha: 0,
+        scale: 1.45 + index * 0.24,
+        delay: index * 110,
+        duration: 440,
+        ease: "Sine.easeOut",
+        onComplete: () => pulse.destroy()
+      });
+    }
+  }
+
+  private pointOnAttackPath(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, t: number) {
+    return new Phaser.Math.Vector2(Phaser.Math.Linear(source.x, target.x, t), Phaser.Math.Linear(source.y, target.y, t));
   }
 
   private maybeProcessNpcTurn() {
@@ -909,13 +1240,21 @@ export class GalaxyMapScene extends Phaser.Scene {
       return;
     }
 
+    this.playStrategicArrivalEffect(effect);
+  }
+
+  private playStrategicArrivalEffect(effect: StrategicArrivalEffect) {
+    this.clearSelection();
     const snapshot = getGalaxySnapshot();
     const origin = snapshot.systems.find((system) => system.id === effect.originSystemId);
     const destination = snapshot.systems.find((system) => system.id === effect.destinationSystemId);
     if (!origin || !destination) {
+      this.arrivalEffectPlaying = false;
       return;
     }
 
+    const visualOrigin = this.toVisualSystem(origin);
+    const visualDestination = this.toVisualSystem(destination);
     this.arrivalEffectPlaying = true;
     this.activeAction = {
       title: "Arrival",
@@ -929,8 +1268,8 @@ export class GalaxyMapScene extends Phaser.Scene {
       try {
         playSwarmStabilisationEffect({
           scene: this,
-          origin,
-          destination,
+          origin: visualOrigin,
+          destination: visualDestination,
           effect,
           onComplete: () => {
             this.arrivalEffectPlaying = false;
@@ -947,6 +1286,14 @@ export class GalaxyMapScene extends Phaser.Scene {
         this.render();
       }
     });
+  }
+
+  private toVisualSystem(system: StarSystem): StarSystem {
+    return {
+      ...system,
+      x: this.mapX(system.x),
+      y: this.mapY(system.y)
+    };
   }
 }
 

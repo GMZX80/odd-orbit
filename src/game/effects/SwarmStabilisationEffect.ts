@@ -20,12 +20,9 @@ const arrivalSettleMs = 720;
 
 export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOptions) {
   const { scene, origin, destination, effect, onComplete } = options;
-  const destinationPoint = new Phaser.Math.Vector2(destination.x, destination.y);
   const originPoint = new Phaser.Math.Vector2(origin.x, origin.y);
-  const arrivalPoint = new Phaser.Math.Vector2(
-    Phaser.Math.Clamp(destination.x + (destination.x < 210 ? 38 : -38), 54, 336),
-    Phaser.Math.Clamp(destination.y - 42, 84, 520)
-  );
+  const destinationPoint = new Phaser.Math.Vector2(destination.x, destination.y);
+  const arrivalPoint = originPoint.clone();
   const isAutoBattle = effect.resolutionMode === "auto";
   const rawRunnerSpheres = effect.rawRunnerSpheres ?? 0;
   const successfulArrival =
@@ -40,7 +37,7 @@ export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOp
   const camera = scene.cameras.main;
   const startZoom = camera.zoom;
 
-  focusCamera(scene, destinationPoint, startZoom);
+  focusCamera(scene, originPoint, destinationPoint, startZoom);
 
   const routePulse = scene.add.line(0, 0, origin.x, origin.y, destination.x, destination.y, playerBlue, 0.2);
   routePulse.setOrigin(0, 0).setLineWidth(4 + densityScale * 1.8);
@@ -59,21 +56,6 @@ export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOp
   playerBody.setStrokeStyle(3, playerPalette.mapStroke, 0);
   overlay.addAt(playerBody, 1);
   createResultBadge(scene, overlay, destinationPoint, effect);
-
-  if (isAutoBattle) {
-    const source = scene.add.container(originPoint.x, originPoint.y);
-    source.setAlpha(0);
-    overlay.add(source);
-    scene.time.delayedCall(420, () => {
-      if (successfulArrival) {
-        beginSuccessfulArrival(scene, overlay, source, sectorOverlay, playerBody, destinationPoint, effect, visibleArrivalSpheres, visibleSettledUnits, densityScale);
-        return;
-      }
-      beginFailedArrival(scene, overlay, source, originPoint, destinationPoint, visibleArrivalSpheres, effect);
-    });
-    finishEffect(scene, overlay, camera, startZoom, successfulArrival ? 3100 : 2400, onComplete);
-    return;
-  }
 
   const portal = createArrivalPortal(scene, overlay, arrivalPoint, successfulArrival);
   scene.time.delayedCall(successfulArrival ? portalOpenDelayMs : 480, () => {
@@ -120,36 +102,35 @@ function finishEffect(
   window.setTimeout(complete, totalDuration + 820);
 }
 
-function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Container, destinationPoint: Phaser.Math.Vector2, effect: StrategicArrivalEffect) {
-  const badgeX = Phaser.Math.Clamp(destinationPoint.x, 106, 284);
-  const badgeY = Phaser.Math.Clamp(destinationPoint.y - 72, 94, 560);
+function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Container, _destinationPoint: Phaser.Math.Vector2, effect: StrategicArrivalEffect) {
+  const badgeX = 235;
+  const badgeY = 82;
   const captured = effect.destinationOwnerAfter === "player" && effect.destinationUnitsAfter > 0 && effect.outcome !== "failed" && effect.outcome !== "repelled";
   const borderColor = captured ? stableBlue : 0xff6d75;
   const subtitle =
     captured
-      ? `1 seed -> ${effect.rawRunnerSpheres ?? 0} swarm\n${effect.rawRunnerSpheres ?? 0} swarm -> ${effect.convertedStrategicUnits} units`
+      ? `1 seed -> ${effect.rawRunnerSpheres ?? 0} swarm -> ${effect.convertedStrategicUnits} units`
       : effect.resolutionMode === "auto"
-        ? `1 seed lost\nDefence ${effect.defenderUnitsAfter} holds`
-        : "1 seed lost\nNo units arrive";
+        ? "1 seed lost · Defence holds"
+        : "1 seed lost · No units arrive";
 
   const badge = scene.add.container(badgeX, badgeY);
-  const background = scene.add.rectangle(0, 0, 188, 62, 0x07131d, 0.9).setStrokeStyle(2, borderColor, 0.8);
+  const background = scene.add.rectangle(0, 0, 245, 58, 0x07131d, 0.82).setStrokeStyle(2, borderColor, 0.72);
   const title = scene.add
-    .text(0, -20, effect.summaryLabel, {
+    .text(0, -13, effect.summaryLabel, {
       color: "#f7fbff",
       fontFamily: "Inter, sans-serif",
-      fontSize: "13px",
+      fontSize: "12px",
       fontStyle: "900"
     })
     .setOrigin(0.5);
   const detail = scene.add
-    .text(0, 6, subtitle, {
+    .text(0, 11, subtitle, {
       color: captured ? "#8ee7ff" : "#ffb0b6",
       fontFamily: "Inter, sans-serif",
-      fontSize: "9.5px",
+      fontSize: "10px",
       fontStyle: "900",
-      align: "center",
-      lineSpacing: 2
+      align: "center"
     })
     .setOrigin(0.5);
 
@@ -160,12 +141,12 @@ function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Cont
   scene.tweens.add({ targets: badge, alpha: 1, scale: 1, duration: 260, ease: "Back.easeOut" });
 }
 
-function focusCamera(scene: Phaser.Scene, point: Phaser.Math.Vector2, startZoom: number) {
+function focusCamera(scene: Phaser.Scene, originPoint: Phaser.Math.Vector2, destinationPoint: Phaser.Math.Vector2, startZoom: number) {
   const camera = scene.cameras.main;
-  const focusX = Phaser.Math.Clamp(point.x, 96, 294);
-  const focusY = Phaser.Math.Clamp(point.y, 150, 468);
+  const focusX = Phaser.Math.Clamp((originPoint.x + destinationPoint.x) / 2, 96, 294);
+  const focusY = Phaser.Math.Clamp((originPoint.y + destinationPoint.y) / 2, 150, 468);
   camera.pan(focusX, focusY, 760, "Sine.easeInOut");
-  camera.zoomTo(Math.max(startZoom, 1.2), 760, "Sine.easeInOut");
+  camera.zoomTo(Math.max(startZoom, 1.14), 760, "Sine.easeInOut");
 }
 
 function createSectorOverlay(
@@ -238,8 +219,8 @@ function beginSuccessfulArrival(
   let absorbedParticles = 0;
   const particleCountForRatio = Math.max(1, visibleArrivalSpheres);
   const targetUnits = Math.max(0, effect.destinationUnitsAfter);
-  const streamMs = effect.resolutionMode === "auto" ? 1250 : arrivalStreamMs;
-  const stableDelayMs = effect.resolutionMode === "auto" ? 780 : 1380;
+  const streamMs = arrivalStreamMs;
+  const stableDelayMs = 1380;
   const updateCountFromAbsorption = () => {
     const absorbedRatio = Phaser.Math.Clamp(absorbedParticles / particleCountForRatio, 0, 1);
     const stabilisedCount = Math.min(targetUnits, Math.round(targetUnits * absorbedRatio));
@@ -265,7 +246,7 @@ function beginSuccessfulArrival(
     const targetAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
     const targetRadius = Phaser.Math.FloatBetween(0, 12 + densityScale * 3);
     const delay = Math.round((index / particleCountForRatio) * streamMs + Phaser.Math.Between(-80, 120));
-    const duration = effect.resolutionMode === "auto" ? Phaser.Math.Between(520, 840) : Phaser.Math.Between(820, 1280);
+    const duration = Phaser.Math.Between(820, 1280);
     scene.tweens.add({
       targets: particle,
       x: destinationPoint.x + Math.cos(targetAngle) * targetRadius,
@@ -295,17 +276,17 @@ function beginSuccessfulArrival(
       x: destinationPoint.x + Math.cos(angle) * orbitRadius,
       y: destinationPoint.y + Math.sin(angle) * orbitRadius * 0.7,
       alpha: 0.82,
-      delay: stableDelayMs + Math.round((index / Math.max(1, visibleSettledUnits)) * (effect.resolutionMode === "auto" ? 520 : 980)) + Phaser.Math.Between(0, 180),
+      delay: stableDelayMs + Math.round((index / Math.max(1, visibleSettledUnits)) * 980) + Phaser.Math.Between(0, 180),
       duration: arrivalSettleMs,
       ease: "Back.easeOut"
     });
   }
 
-  scene.time.delayedCall(streamMs + (effect.resolutionMode === "auto" ? 760 : 1260), () => {
+  scene.time.delayedCall(streamMs + 1260, () => {
     sectorOverlay.countText.setText(String(targetUnits));
     pulseDestination(scene, overlay, destinationPoint, stableBlue, 4, 1080);
   });
-  scene.tweens.add({ targets: portal, alpha: 0, scale: 0.35, delay: streamMs + (effect.resolutionMode === "auto" ? 900 : 1480), duration: 520, ease: "Quad.easeIn" });
+  scene.tweens.add({ targets: portal, alpha: 0, scale: 0.35, delay: streamMs + 1480, duration: 520, ease: "Quad.easeIn" });
 }
 
 function beginFailedArrival(
