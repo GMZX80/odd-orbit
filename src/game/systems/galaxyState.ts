@@ -1,5 +1,6 @@
 import { constellations, initialSystems } from "../data/galaxyMap";
 import { routeEnemyThemeForFaction } from "./factionTheme";
+import { getNpcPersonality, type NpcPersonality } from "./npcPersonalities";
 import { convertRunnerSpheresToStrategicUnits } from "./runnerStrategicConversion";
 import type {
   FactionId,
@@ -616,9 +617,10 @@ function calculateDeployment(faction: FactionId) {
 }
 
 function placeNpcDeployment(faction: FactionId, deployment: number) {
+  const personality = getNpcPersonality(faction);
   const candidates = systems
     .filter((system) => system.owner === faction)
-    .sort((a, b) => borderPressure(b, faction) - borderPressure(a, faction) || a.fleetUnits - b.fleetUnits);
+    .sort((a, b) => scoreNpcDeploymentTarget(faction, b, personality) - scoreNpcDeploymentTarget(faction, a, personality));
   const target = candidates[0];
   if (!target || deployment <= 0) {
     return undefined;
@@ -629,17 +631,17 @@ function placeNpcDeployment(faction: FactionId, deployment: number) {
 }
 
 function chooseAndExecuteNpcAction(faction: FactionId, deployment: number, deployTarget: StarSystem | undefined): GalaxyAction {
-  const captureCandidate = bestNpcAttack(faction, true);
-  if (captureCandidate) {
-    return resolveNpcAttack(faction, captureCandidate.origin, captureCandidate.destination);
+  const attackCandidate = bestNpcAttack(faction);
+  if (attackCandidate) {
+    return resolveNpcAttack(faction, attackCandidate.origin, attackCandidate.destination);
   }
 
-  const expansionCandidate = bestNpcExpansion(faction);
-  if (expansionCandidate) {
-    return resolveNpcAttack(faction, expansionCandidate.origin, expansionCandidate.destination);
-  }
-
-  const reinforceTarget = deployTarget ?? systems.filter((system) => system.owner === faction).sort((a, b) => borderPressure(b, faction) - borderPressure(a, faction))[0];
+  const personality = getNpcPersonality(faction);
+  const reinforceTarget =
+    deployTarget ??
+    systems
+      .filter((system) => system.owner === faction)
+      .sort((a, b) => scoreNpcDeploymentTarget(faction, b, personality) - scoreNpcDeploymentTarget(faction, a, personality))[0];
   if (reinforceTarget) {
     reinforceTarget.fleetUnits += 1;
     return {
@@ -657,20 +659,17 @@ function chooseAndExecuteNpcAction(faction: FactionId, deployment: number, deplo
   };
 }
 
-function bestNpcAttack(faction: FactionId, requireCapture: boolean) {
-  return npcAttackCandidates(faction)
-    .filter((candidate) => !requireCapture || npcBattleScore(candidate.origin, candidate.destination) >= 0.58 || candidate.destination.fleetUnits <= 0)
-    .sort((a, b) => {
-      const aPlayerPriority = a.destination.owner === "player" ? 2 : a.destination.owner === "neutral" ? 1 : 0;
-      const bPlayerPriority = b.destination.owner === "player" ? 2 : b.destination.owner === "neutral" ? 1 : 0;
-      return bPlayerPriority - aPlayerPriority || npcBattleScore(b.origin, b.destination) - npcBattleScore(a.origin, a.destination);
-    })[0];
-}
+function bestNpcAttack(faction: FactionId) {
+  const personality = getNpcPersonality(faction);
+  const candidates = npcAttackCandidates(faction)
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreNpcAttackCandidate(faction, candidate.origin, candidate.destination, personality)
+    }))
+    .filter((candidate) => Number.isFinite(candidate.score) && candidate.score > 0)
+    .sort((a, b) => b.score - a.score);
 
-function bestNpcExpansion(faction: FactionId) {
-  return npcAttackCandidates(faction)
-    .filter((candidate) => candidate.destination.owner === "neutral")
-    .sort((a, b) => b.origin.fleetUnits - a.origin.fleetUnits || a.destination.fleetUnits - b.destination.fleetUnits)[0];
+  return candidates[0];
 }
 
 function npcAttackCandidates(faction: FactionId) {
@@ -686,27 +685,44 @@ function npcAttackCandidates(faction: FactionId) {
 }
 
 function resolveNpcAttack(faction: FactionId, origin: StarSystem, destination: StarSystem): GalaxyAction {
-  const committed = Math.max(0, origin.fleetUnits - 1);
-  const battle = resolveStrategicBattle(committed, Math.max(0, destination.fleetUnits));
-  const previousOwner = destination.owner;
-  origin.fleetUnits = 1;
+  if (origin.owner !== faction || origin.fleetUnits < 2 || destination.owner === faction || !origin.neighbours.includes(destination.id)) {
+    return {
+      title: `${getFactionName(faction)} Holds Position`,
+      detail: `${getFactionName(faction)} could not launch a valid one-seed incursion from ${origin.name}.`,
+      faction,
+      originSystemId: origin.id
+    };
+  }
 
-  if (battle.captured) {
+  const seedUnitsCommitted = 1;
+  const originUnitsBefore = origin.fleetUnits;
+  const defenderUnitsBefore = destination.fleetUnits;
+  const previousOwner = destination.owner;
+  const effectiveDefence = calculateEffectiveDefence(destination);
+  const successChance = calculateAutoIncursionChance(origin, destination);
+
+  origin.fleetUnits -= seedUnitsCommitted;
+  const captured = Math.random() < successChance;
+
+  if (captured) {
+    const autoRawSwarm = generateAutoRawSwarm(originUnitsBefore, defenderUnitsBefore, destination, effectiveDefence);
+    const generatedStrategicUnits = convertRunnerSpheresToStrategicUnits(autoRawSwarm, {
+      maxStrategicUnitsFromRun: 18
+    });
     destination.owner = faction;
-    destination.fleetUnits = battle.attackersRemaining;
+    destination.fleetUnits = generatedStrategicUnits;
     return {
       title: `${getFactionName(faction)} Captures ${destination.name}`,
-      detail: `${committed} units crossed from ${origin.name}. ${destination.name} changed hands from ${getFactionName(previousOwner)}.`,
+      detail: `${getFactionName(faction)} launches a one-seed incursion from ${origin.name}. ${destination.name} changes hands from ${getFactionName(previousOwner)} with ${generatedStrategicUnits} stabilised units.`,
       faction,
       originSystemId: origin.id,
       destinationSystemId: destination.id
     };
   }
 
-  destination.fleetUnits = battle.defendersRemaining;
   return {
     title: `${getFactionName(faction)} Pressures ${destination.name}`,
-    detail: `${committed} units crossed from ${origin.name}. ${destination.name} holds with ${destination.fleetUnits} units.`,
+    detail: `${getFactionName(faction)} launches a one-seed incursion from ${origin.name}. ${destination.name} repels the seed unit and holds with ${destination.fleetUnits} defenders.`,
     faction,
     originSystemId: origin.id,
     destinationSystemId: destination.id
@@ -714,10 +730,105 @@ function resolveNpcAttack(faction: FactionId, origin: StarSystem, destination: S
 }
 
 function npcBattleScore(origin: StarSystem, destination: StarSystem) {
-  const attackingUnits = Math.max(0, origin.fleetUnits - 1);
-  const defenderUnits = Math.max(0, destination.fleetUnits);
-  const seed = stableBattleSeed(origin.id, destination.id, attackingUnits, defenderUnits);
-  return estimateBattleWinChance(attackingUnits, defenderUnits, seed);
+  if (origin.fleetUnits < 2 || origin.owner === destination.owner || !origin.neighbours.includes(destination.id)) {
+    return 0;
+  }
+
+  return calculateAutoIncursionChance(origin, destination);
+}
+
+function scoreNpcAttackCandidate(faction: FactionId, origin: StarSystem, destination: StarSystem, personality: NpcPersonality) {
+  const successChance = npcBattleScore(origin, destination);
+  if (successChance < personality.minAttackWinChance) {
+    return -Infinity;
+  }
+
+  const weakTargetValue = clamp((14 - Math.max(0, destination.fleetUnits)) / 14, 0, 1);
+  const originPressure = normalizedBorderPressure(origin, faction);
+  const ownerValue =
+    destination.owner === "player"
+      ? 0.45 + personality.playerHostility * 1.4 + personality.aggression * 0.45
+      : destination.owner === "neutral"
+        ? 0.35 + personality.expansionBias * 1.45 + personality.resourceGreed * 0.15
+        : 0.2 + personality.aggression * 0.55 + personality.opportunism * 0.35;
+  const oddsValue =
+    (successChance - personality.minAttackWinChance) * (2.6 + personality.riskTolerance) +
+    Math.max(0, successChance - personality.preferredAttackWinChance) * (1.7 + personality.caution);
+  const resourceValue = (destination.resourceValue / 4) * personality.resourceGreed;
+  const constellationValue = constellationProgressValue(faction, destination) * personality.constellationGreed;
+  const typeValue =
+    systemTypeStrategicValue(destination) * (0.35 + personality.fortressPreference * 0.75 + personality.resourceGreed * 0.2);
+  const opportunityValue = weakTargetValue * (0.4 + personality.opportunism * 1.15);
+  const defensivePenalty = originPressure * personality.defensiveBias * personality.caution * 0.7;
+  const randomNudge = Math.random() * personality.randomness;
+
+  return (
+    ownerValue +
+    oddsValue +
+    resourceValue +
+    constellationValue +
+    typeValue +
+    opportunityValue +
+    personality.aggression * 0.28 +
+    randomNudge -
+    defensivePenalty
+  );
+}
+
+function scoreNpcDeploymentTarget(faction: FactionId, system: StarSystem, personality: NpcPersonality) {
+  const pressure = normalizedBorderPressure(system, faction);
+  const resourceValue = (system.resourceValue / 4) * personality.resourceGreed;
+  const constellationValue = constellationProgressValue(faction, system) * personality.constellationGreed;
+  const typeValue =
+    systemTypeStrategicValue(system) * (0.25 + personality.fortressPreference * 0.95 + personality.defensiveBias * 0.35);
+  const weakGarrisonNeed = clamp((10 - system.fleetUnits) / 10, 0, 1) * (0.35 + personality.defensiveBias);
+  const attackReadiness = system.fleetUnits > 1 ? 0 : 0.35 + personality.aggression * 0.3;
+  const randomNudge = Math.random() * personality.randomness;
+
+  return (
+    pressure * (0.65 + personality.borderSensitivity * 1.6 + personality.defensiveBias) +
+    resourceValue +
+    constellationValue +
+    typeValue +
+    weakGarrisonNeed +
+    attackReadiness +
+    randomNudge -
+    personality.aggression * 0.12
+  );
+}
+
+function constellationProgressValue(faction: FactionId, destination: StarSystem) {
+  const constellationSystems = systems.filter((system) => system.constellationId === destination.constellationId);
+  if (constellationSystems.length === 0) {
+    return 0;
+  }
+
+  const ownedCount = constellationSystems.filter((system) => system.owner === faction).length;
+  const wouldComplete = destination.owner !== faction && ownedCount === constellationSystems.length - 1;
+  const progress = ownedCount / constellationSystems.length;
+  const bonus = constellations.find((constellation) => constellation.id === destination.constellationId)?.bonusUnits ?? 0;
+
+  return clamp(progress + bonus * 0.08 + (wouldComplete ? 0.85 : 0), 0, 1.8);
+}
+
+function systemTypeStrategicValue(system: StarSystem) {
+  switch (system.systemType) {
+    case "fortress":
+      return 1;
+    case "core":
+      return 0.9;
+    case "mining":
+      return 0.72;
+    case "rift":
+      return 0.48;
+    case "frontier":
+    default:
+      return 0.3;
+  }
+}
+
+function normalizedBorderPressure(system: StarSystem, faction: FactionId) {
+  return clamp(borderPressure(system, faction) / 28, 0, 1.6);
 }
 
 function borderPressure(system: StarSystem, faction: FactionId) {
@@ -797,76 +908,6 @@ function generateAutoRawSwarm(originUnitsBefore: number, defenderUnitsBefore: nu
   const rawSwarm = Math.round(10 + originSupport + defenceReward + neutralLift + randomSwing - effectiveDefence * 0.45 - difficultyPenalty - fortressPenalty);
 
   return Math.round(clamp(rawSwarm, 1, 120));
-}
-
-function resolveStrategicBattle(attackingUnitsInput: number, defenderUnitsInput: number, rng: () => number = Math.random) {
-  let attackersRemaining = Math.max(0, Math.floor(attackingUnitsInput));
-  let defendersRemaining = Math.max(0, Math.floor(defenderUnitsInput));
-
-  while (attackersRemaining > 0 && defendersRemaining > 0) {
-    const attackerDice = rollBattleDice(Math.min(3, attackersRemaining), rng);
-    const defenderDice = rollBattleDice(Math.min(2, defendersRemaining), rng);
-    const comparisons = Math.min(attackerDice.length, defenderDice.length);
-
-    for (let index = 0; index < comparisons; index += 1) {
-      if (attackerDice[index] > defenderDice[index]) {
-        defendersRemaining -= 1;
-      } else {
-        attackersRemaining -= 1;
-      }
-
-      if (attackersRemaining <= 0 || defendersRemaining <= 0) {
-        break;
-      }
-    }
-  }
-
-  return {
-    captured: attackersRemaining > 0 && defendersRemaining <= 0,
-    attackersRemaining,
-    defendersRemaining
-  };
-}
-
-function estimateBattleWinChance(attackingUnits: number, defenderUnits: number, seed: number) {
-  if (attackingUnits <= 0) {
-    return 0;
-  }
-  if (defenderUnits <= 0) {
-    return 1;
-  }
-
-  const trials = 180;
-  let wins = 0;
-  const rng = createSeededRng(seed);
-  for (let index = 0; index < trials; index += 1) {
-    if (resolveStrategicBattle(attackingUnits, defenderUnits, rng).captured) {
-      wins += 1;
-    }
-  }
-  return clamp(wins / trials, 0.02, 0.98);
-}
-
-function rollBattleDice(count: number, rng: () => number) {
-  return Array.from({ length: count }, () => 1 + Math.floor(rng() * 6)).sort((a, b) => b - a);
-}
-
-function stableBattleSeed(originId: string, destinationId: string, attackingUnits: number, defenderUnits: number) {
-  const source = `${originId}:${destinationId}:${attackingUnits}:${defenderUnits}`;
-  let hash = 2166136261;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function createSeededRng(seed: number) {
-  let value = seed >>> 0;
-  return () => {
-    value = (Math.imul(value, 1664525) + 1013904223) >>> 0;
-    return value / 4294967296;
-  };
 }
 
 function randomInt(min: number, max: number) {
