@@ -19,6 +19,7 @@ import {
   skipDeployment
 } from "../systems/galaxyState";
 import { factionThemes } from "../systems/factionTheme";
+import { getSystemTypeTraits, type SystemType } from "../systems/systemTypeTraits";
 import type { Constellation, FactionId, GalaxyAction, StarSystem, StrategicArrivalEffect } from "../systems/galaxyTypes";
 
 const ownerPalette: Record<FactionId, { fill: number; stroke: number; label: string }> = {
@@ -40,8 +41,8 @@ type DirectionalAttackOptions = {
 
 const mapLeftX = 82;
 const mapScaleX = 0.78;
-const mapTopY = 44;
-const mapScaleY = 0.82;
+const mapTopY = 24;
+const mapScaleY = 0.96;
 
 export class GalaxyMapScene extends Phaser.Scene {
   private selectedSystemId?: string;
@@ -84,12 +85,15 @@ export class GalaxyMapScene extends Phaser.Scene {
     const snapshot = getGalaxySnapshot();
     const cinematicMode = this.isCinematicMode();
     this.drawBackground();
-    this.drawConstellations(snapshot.systems, snapshot.constellations);
+    this.drawConstellations(snapshot.systems, snapshot.constellations, snapshot.turnPhase);
     if (!cinematicMode) {
       this.drawPhaseHud(snapshot);
     }
     this.drawStarlanes(snapshot.systems);
     this.drawSystems(snapshot);
+    if (!cinematicMode && snapshot.turnPhase === "deploy") {
+      this.drawDeployProductionEffects(snapshot);
+    }
     if (cinematicMode) {
       this.drawCinematicShade();
     } else {
@@ -124,7 +128,7 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.add.circle(34, 640, 92, 0x3f1d55, 0.1).setDepth(0);
   }
 
-  private drawConstellations(systems: StarSystem[], constellations: Constellation[]) {
+  private drawConstellations(systems: StarSystem[], constellations: Constellation[], turnPhase: GalaxySnapshot["turnPhase"]) {
     for (const constellation of constellations) {
       const members = systems.filter((system) => system.constellationId === constellation.id);
       if (members.length === 0) {
@@ -141,6 +145,9 @@ export class GalaxyMapScene extends Phaser.Scene {
       const height = Math.max(64, maxY - minY + 58);
 
       this.add.ellipse(x, y, width, height, constellation.tint, 0.025).setStrokeStyle(1, constellation.tint, 0.06).setDepth(0.5);
+      if (turnPhase === "deploy" && members.every((system) => system.owner === "player")) {
+        this.drawConstellationBonusPulse(x, y, width, height, constellation.tint);
+      }
     }
   }
 
@@ -161,7 +168,6 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.drawPhaseStep(2, 39, 252, "Redeploy", "", this.phaseStepState(snapshot, 2));
     this.drawPhaseStep(3, 39, 386, "Attack", "", this.phaseStepState(snapshot, 3));
     this.drawPhaseStep(4, 39, 520, "Enemy", "Moves", this.phaseStepState(snapshot, 4));
-    this.drawMenuButton();
   }
 
   private phaseStepState(snapshot: GalaxySnapshot, step: number) {
@@ -205,13 +211,6 @@ export class GalaxyMapScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0)
       .setDepth(50);
-  }
-
-  private drawMenuButton() {
-    this.add.rectangle(363, 34, 32, 32, 0x07131d, 0.7).setStrokeStyle(1.5, 0x315a77, 0.78).setDepth(51);
-    for (let index = 0; index < 3; index += 1) {
-      this.add.rectangle(363, 25 + index * 8, 16, 2.4, 0x7ee4ff, 0.86).setDepth(52);
-    }
   }
 
   private drawStarlanes(systems: StarSystem[]) {
@@ -274,6 +273,7 @@ export class GalaxyMapScene extends Phaser.Scene {
         this.add.circle(this.mapX(system.x), this.mapY(system.y), radius + 18, color, 0.1).setStrokeStyle(5, color, 0.3).setDepth(2.8);
         this.add.circle(this.mapX(system.x), this.mapY(system.y), radius + 11, color, 0.18).setStrokeStyle(3, color, 0.9).setDepth(3);
       }
+      this.drawSystemTypeVisual(system, radius, time);
 
       const body = this.add.circle(this.mapX(system.x), this.mapY(system.y), radius, palette.fill, 0.93).setStrokeStyle(3, palette.stroke, 0.95).setDepth(5);
       body.setInteractive({ useHandCursor: true });
@@ -318,6 +318,9 @@ export class GalaxyMapScene extends Phaser.Scene {
       }
     }
     if (snapshot.turnPhase === "fortify") {
+      if (selected && this.destinationSystemId) {
+        return "none";
+      }
       if (!selected && system.owner === "player" && system.fleetUnits > 1) {
         return "fortify-origin";
       }
@@ -338,6 +341,135 @@ export class GalaxyMapScene extends Phaser.Scene {
     const alpha = Phaser.Math.Linear(0.16, 0.42, pulse);
     const scale = Phaser.Math.Linear(1, 1.18, pulse);
     this.add.circle(this.mapX(system.x), this.mapY(system.y), (radius + 10) * scale, color, alpha * 0.5).setStrokeStyle(2.2, color, alpha).setDepth(2);
+  }
+
+  private drawSystemTypeVisual(system: StarSystem, radius: number, time: number) {
+    const type = this.systemType(system);
+    const x = this.mapX(system.x);
+    const y = this.mapY(system.y);
+    const palette = ownerPalette[system.owner];
+
+    switch (type) {
+      case "mining":
+        this.drawMiningVisual(x, y, radius, time);
+        break;
+      case "fortress":
+        this.drawFortressVisual(x, y, radius, palette.stroke);
+        break;
+      case "core":
+        this.drawCoreVisual(x, y, radius, palette.stroke);
+        break;
+      case "rift":
+        this.drawRiftVisual(x, y, radius, time);
+        break;
+      case "frontier":
+      default:
+        this.add.circle(x, y, radius + 6, 0xd9edf5, 0).setStrokeStyle(1.2, 0xd9edf5, 0.3).setDepth(3.4);
+        break;
+    }
+  }
+
+  private drawMiningVisual(x: number, y: number, radius: number, time: number) {
+    const orbit = radius + 10;
+    for (let index = 0; index < 3; index += 1) {
+      const angle = time * 0.0008 + index * ((Math.PI * 2) / 3);
+      const pip = this.add.circle(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.82, 2.2, 0xffd45f, 0.92);
+      pip.setStrokeStyle(0.8, 0xfff6b0, 0.75).setDepth(6.2);
+    }
+    this.add.circle(x + radius * 0.62, y - radius * 0.58, 2, 0xfff6b0, 0.72).setDepth(6.1);
+  }
+
+  private drawFortressVisual(x: number, y: number, radius: number, ownerStroke: number) {
+    this.add.circle(x, y, radius + 8, 0xd9edf5, 0.02).setStrokeStyle(2.6, 0xd9edf5, 0.58).setDepth(3.5);
+    for (let index = 0; index < 4; index += 1) {
+      const angle = -Math.PI / 4 + index * (Math.PI / 2);
+      const plate = this.add.rectangle(x + Math.cos(angle) * (radius + 12), y + Math.sin(angle) * (radius + 12), 11, 4, ownerStroke, 0.82);
+      plate.setRotation(angle).setDepth(5.8);
+    }
+  }
+
+  private drawCoreVisual(x: number, y: number, radius: number, ownerStroke: number) {
+    this.add.circle(x, y, radius + 8, ownerStroke, 0.03).setStrokeStyle(1.5, 0x9ee7ff, 0.72).setDepth(3.5);
+    this.add.circle(x, y, radius + 13, 0xffffff, 0.01).setStrokeStyle(1.1, 0xffffff, 0.42).setDepth(3.4);
+    this.add.star(x, y - radius * 0.1, 5, 2.2, 4.8, 0xf7fbff, 0.78).setDepth(6.1);
+  }
+
+  private drawRiftVisual(x: number, y: number, radius: number, time: number) {
+    const spin = (time * 0.0012) % (Math.PI * 2);
+    this.drawArcSegment(x, y, radius + 9, spin, spin + 1.35, 0x66f2ff, 0.78, 2.2, 5.7);
+    this.drawArcSegment(x, y, radius + 9, spin + Math.PI, spin + Math.PI + 1.05, 0x9b6dff, 0.7, 2.2, 5.7);
+    this.add.triangle(x - radius - 7, y + 1, 0, -3, 7, 0, 0, 3, 0x9b6dff, 0.72).setRotation(spin + 0.5).setDepth(5.8);
+    this.add.circle(x + radius + 7, y - 2, 1.9, 0x66f2ff, 0.75).setDepth(5.8);
+  }
+
+  private drawArcSegment(x: number, y: number, radius: number, start: number, end: number, color: number, alpha: number, width: number, depth: number) {
+    const arc = this.add.graphics();
+    arc.lineStyle(width, color, alpha);
+    arc.beginPath();
+    arc.arc(x, y, radius, start, end, false);
+    arc.strokePath();
+    arc.setDepth(depth);
+  }
+
+  private drawDeployProductionEffects(snapshot: GalaxySnapshot) {
+    if (snapshot.deploymentUnitsRemaining <= 0) {
+      return;
+    }
+
+    const phaseTarget = new Phaser.Math.Vector2(39, 118);
+    for (const system of snapshot.systems) {
+      if (system.owner !== "player") {
+        continue;
+      }
+
+      const traits = getSystemTypeTraits(system);
+      if (traits.productionBonus <= 0) {
+        continue;
+      }
+
+      const source = new Phaser.Math.Vector2(this.mapX(system.x), this.mapY(system.y));
+      const color = this.systemType(system) === "mining" ? 0xffd45f : 0x9ee7ff;
+      this.drawProductionPulse(source, phaseTarget, color, this.systemType(system) === "mining" ? 0.18 : 0);
+    }
+  }
+
+  private drawProductionPulse(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, color: number, delaySeconds: number) {
+    const particle = this.add.circle(source.x, source.y, 3.2, color, 0.86).setStrokeStyle(1, 0xffffff, 0.55).setDepth(62);
+    this.tweens.add({
+      targets: particle,
+      x: target.x,
+      y: target.y,
+      alpha: 0,
+      scale: 0.5,
+      delay: delaySeconds * 1000,
+      duration: 980,
+      ease: "Sine.easeInOut",
+      onComplete: () => particle.destroy()
+    });
+  }
+
+  private drawConstellationBonusPulse(x: number, y: number, width: number, height: number, color: number) {
+    const pulse = this.add.ellipse(x, y, width + 12, height + 10, color, 0.03).setStrokeStyle(1.7, color, 0.22).setDepth(0.7);
+    this.tweens.add({
+      targets: pulse,
+      alpha: 0,
+      scale: 1.06,
+      duration: 1100,
+      ease: "Sine.easeOut",
+      onComplete: () => pulse.destroy()
+    });
+
+    const particle = this.add.circle(x, y, 3.6, color, 0.72).setDepth(62);
+    this.tweens.add({
+      targets: particle,
+      x: 39,
+      y: 118,
+      alpha: 0,
+      scale: 0.5,
+      duration: 1120,
+      ease: "Sine.easeInOut",
+      onComplete: () => particle.destroy()
+    });
   }
 
   private drawActionBadge(snapshot: GalaxySnapshot) {
@@ -433,25 +565,19 @@ export class GalaxyMapScene extends Phaser.Scene {
 
   private drawAttackChoice(origin: StarSystem, destination: StarSystem) {
     const odds = Math.round(estimateAutoIncursionChance(origin.id, destination.id) * 100);
-    const panelCx = 235;
-    const panelCy = 620;
-    this.add.rectangle(panelCx, panelCy, 300, 96, 0x07131d, 0.92).setStrokeStyle(2, 0x66f2a8, 0.58).setDepth(58);
-    this.add
-      .text(panelCx, panelCy - 30, `${origin.name}  ->  ${destination.name}`, {
-        color: "#ffe66f",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "13px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(62);
-    this.drawButton(94, 642, 76, 36, "Cancel", () => {
+    const dockX = 92;
+    const dockY = 632;
+    const dockW = 282;
+    const dockH = 58;
+    this.add.rectangle(dockX + dockW / 2, dockY + dockH / 2, dockW, dockH, 0x07131d, 0.82).setStrokeStyle(1.8, 0x66f2a8, 0.42).setDepth(58);
+    this.drawButton(108, 648, 64, 30, "Cancel", () => {
       this.destinationSystemId = undefined;
       this.fortifyUnitsToMove = undefined;
       this.render();
     }, "ghost");
-    this.drawButton(180, 642, 76, 36, "Play", () => this.launchMove(), "primary");
-    this.drawButton(266, 642, 88, 36, `Auto ${odds}%`, () => this.autoResolveMove(), "secondary");
+    this.drawButton(184, 642, 76, 40, "Play", () => this.launchMove(), "primary");
+    this.drawButton(272, 648, 84, 30, `Auto ${odds}%`, () => this.autoResolveMove(), "secondary");
+    this.drawAttackPreview(origin, destination, odds / 100);
     this.drawRouteArrow(origin, destination, 0x66f2a8);
   }
 
@@ -468,6 +594,58 @@ export class GalaxyMapScene extends Phaser.Scene {
     const arrow = this.add.triangle(arrowX, arrowY, 0, -7, 15, 0, 0, 7, color, 0.94);
     arrow.setRotation(angle);
     arrow.setDepth(8);
+  }
+
+  private drawAttackPreview(origin: StarSystem, destination: StarSystem, chance: number) {
+    const originX = this.mapX(origin.x);
+    const originY = this.mapY(origin.y);
+    const destinationX = this.mapX(destination.x);
+    const destinationY = this.mapY(destination.y);
+    const originType = this.systemType(origin);
+    const destinationTraits = getSystemTypeTraits(destination);
+    const particleCount = Phaser.Math.Clamp(Math.round(3 + chance * 3), 3, 5);
+
+    this.drawAttackOriginPips(originX, originY, originType);
+    this.drawAttackRouteEnergy(originX, originY, destinationX, destinationY, particleCount, originType);
+    this.drawTargetDefencePips(destinationX, destinationY, destinationTraits.defenceModifier, this.systemType(destination));
+  }
+
+  private drawAttackOriginPips(x: number, y: number, originType: SystemType) {
+    const color = originType === "rift" ? 0x9b6dff : originType === "core" ? 0x9ee7ff : 0x66f2a8;
+    const count = originType === "rift" || originType === "core" ? 4 : 3;
+    for (let index = 0; index < count; index += 1) {
+      const angle = -Math.PI / 2 + index * ((Math.PI * 2) / count);
+      this.add.circle(x + Math.cos(angle) * 30, y + Math.sin(angle) * 25, 2.3, color, 0.9).setDepth(8.2);
+    }
+    if (originType === "rift") {
+      this.drawArcSegment(x, y, 34, -0.45, 0.72, 0x66f2ff, 0.82, 2.4, 8.1);
+    }
+    if (originType === "core") {
+      this.add.circle(x, y, 31, 0xffffff, 0).setStrokeStyle(1.8, 0x9ee7ff, 0.78).setDepth(8.1);
+    }
+  }
+
+  private drawAttackRouteEnergy(originX: number, originY: number, destinationX: number, destinationY: number, count: number, originType: SystemType) {
+    const color = originType === "rift" ? 0x9b6dff : originType === "core" ? 0x9ee7ff : 0x66f2a8;
+    for (let index = 0; index < count; index += 1) {
+      const t = 0.2 + (index / Math.max(1, count - 1)) * 0.58;
+      const x = Phaser.Math.Linear(originX, destinationX, t);
+      const y = Phaser.Math.Linear(originY, destinationY, t);
+      this.add.circle(x, y, 2.4, color, 0.76).setDepth(8.4);
+    }
+  }
+
+  private drawTargetDefencePips(x: number, y: number, defenceModifier: number, targetType: SystemType) {
+    const count = Phaser.Math.Clamp(Math.round(defenceModifier * 3), 2, 4);
+    const color = targetType === "fortress" ? 0xd9edf5 : targetType === "core" ? 0x9ee7ff : 0x8da2b5;
+    for (let index = 0; index < count; index += 1) {
+      const angle = Math.PI / 4 + index * ((Math.PI * 2) / count);
+      this.add.rectangle(x + Math.cos(angle) * 31, y + Math.sin(angle) * 27, 6, 3, color, 0.82).setRotation(angle).setDepth(8.3);
+    }
+    if (targetType === "fortress" || targetType === "core") {
+      const ring = this.add.circle(x, y, targetType === "fortress" ? 34 : 31, color, 0.04).setStrokeStyle(targetType === "fortress" ? 3 : 2, color, 0.76).setDepth(8.1);
+      this.tweens.add({ targets: ring, alpha: 0, scale: 1.16, duration: 720, ease: "Sine.easeOut", onComplete: () => ring.destroy() });
+    }
   }
 
   private drawMiniStatus(x: number, y: number, text: string, color: number) {
@@ -487,32 +665,14 @@ export class GalaxyMapScene extends Phaser.Scene {
     const units = this.normalizedFortifyUnits(origin.fleetUnits, maxMovable);
     const panelCx = 235;
     const sliderX = 108;
-    const sliderY = 653;
+    const sliderY = 638;
     const sliderW = 254;
     const ratio = maxMovable <= 1 ? 1 : (units - 1) / (maxMovable - 1);
 
-    this.drawBottomSheet(208, 0x7ee4ff);
-    this.add.rectangle(panelCx, 516, 34, 4, 0x7ee4ff, 0.72).setDepth(59);
+    this.drawBottomSheet(148, 0x7ee4ff);
+    this.add.rectangle(panelCx, 579, 34, 4, 0x7ee4ff, 0.72).setDepth(59);
     this.add
-      .text(panelCx, 534, "FORTIFY", {
-        color: "#5da8ff",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "11px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(72);
-    this.add
-      .text(panelCx, 560, "Redeploy Units", {
-        color: "#f7fbff",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "24px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(72);
-    this.add
-      .text(panelCx - 44, 588, origin.name, {
+      .text(panelCx - 36, 596, origin.name, {
         color: "#ffe66f",
         fontFamily: "Inter, sans-serif",
         fontSize: "14px",
@@ -521,16 +681,16 @@ export class GalaxyMapScene extends Phaser.Scene {
       .setOrigin(1, 0.5)
       .setDepth(72);
     this.add
-      .text(panelCx, 588, "->", {
+      .text(panelCx, 596, "->", {
         color: "#66f2a8",
         fontFamily: "Inter, sans-serif",
-        fontSize: "17px",
+        fontSize: "15px",
         fontStyle: "900"
       })
       .setOrigin(0.5)
       .setDepth(72);
     this.add
-      .text(panelCx + 44, 588, destination.name, {
+      .text(panelCx + 36, 596, destination.name, {
         color: "#66f2a8",
         fontFamily: "Inter, sans-serif",
         fontSize: "14px",
@@ -539,19 +699,10 @@ export class GalaxyMapScene extends Phaser.Scene {
       .setOrigin(0, 0.5)
       .setDepth(72);
     this.add
-      .text(panelCx, 625, String(units), {
+      .text(panelCx, 624, `${units} units`, {
         color: "#f7fbff",
         fontFamily: "Inter, sans-serif",
-        fontSize: "46px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(72);
-    this.add
-      .text(panelCx, 657, "units", {
-        color: "#9fb7c7",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "15px",
+        fontSize: "28px",
         fontStyle: "900"
       })
       .setOrigin(0.5)
@@ -570,12 +721,12 @@ export class GalaxyMapScene extends Phaser.Scene {
         this.setFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
       }
     });
-    this.drawButton(100, 684, 120, 32, "Cancel", () => {
+    this.drawButton(96, 676, 112, 34, "Cancel", () => {
       this.destinationSystemId = undefined;
       this.fortifyUnitsToMove = undefined;
       this.render();
     }, "ghost");
-    this.drawButton(250, 684, 120, 32, "Redeploy", () => this.executeSelectedFortify(), "primary");
+    this.drawButton(250, 676, 112, 34, "Redeploy", () => this.executeSelectedFortify(), "primary");
     this.drawRouteArrow(origin, destination, 0x7ee4ff);
   }
 
@@ -823,7 +974,12 @@ export class GalaxyMapScene extends Phaser.Scene {
   }
 
   private setFortifyUnits(units: number, maxMovable: number) {
-    this.fortifyUnitsToMove = Phaser.Math.Clamp(units, 1, maxMovable);
+    const nextUnits = Phaser.Math.Clamp(units, 1, maxMovable);
+    if (this.fortifyUnitsToMove === nextUnits) {
+      return;
+    }
+
+    this.fortifyUnitsToMove = nextUnits;
     this.render();
   }
 
@@ -1294,6 +1450,10 @@ export class GalaxyMapScene extends Phaser.Scene {
       x: this.mapX(system.x),
       y: this.mapY(system.y)
     };
+  }
+
+  private systemType(system: StarSystem): SystemType {
+    return system.systemType ?? "frontier";
   }
 }
 

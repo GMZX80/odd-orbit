@@ -2,12 +2,12 @@ import { constellations, initialSystems } from "../data/galaxyMap";
 import { routeEnemyThemeForFaction } from "./factionTheme";
 import { getNpcPersonality, type NpcPersonality } from "./npcPersonalities";
 import { convertRunnerSpheresToStrategicUnits } from "./runnerStrategicConversion";
+import { getSystemTypeTraits } from "./systemTypeTraits";
 import type {
   FactionId,
   GalaxyAction,
   GalaxyResolution,
   MoveOrder,
-  RouteDifficulty,
   StarSystem,
   StrategicArrivalEffect,
   StrategicArrivalOutcome,
@@ -607,13 +607,14 @@ function calculateDeployment(faction: FactionId) {
   }
 
   const baseDeployment = Math.max(3, Math.floor(owned.length / 3));
+  const systemProductionBonus = owned.reduce((bonus, system) => bonus + getSystemTypeTraits(system).productionBonus, 0);
   const constellationBonus = constellations.reduce((bonus, constellation) => {
     const constellationSystems = systems.filter((system) => system.constellationId === constellation.id);
     const controlsConstellation = constellationSystems.length > 0 && constellationSystems.every((system) => system.owner === faction);
     return controlsConstellation ? bonus + constellation.bonusUnits : bonus;
   }, 0);
 
-  return baseDeployment + constellationBonus;
+  return baseDeployment + systemProductionBonus + constellationBonus;
 }
 
 function placeNpcDeployment(faction: FactionId, deployment: number) {
@@ -756,8 +757,10 @@ function scoreNpcAttackCandidate(faction: FactionId, origin: StarSystem, destina
     Math.max(0, successChance - personality.preferredAttackWinChance) * (1.7 + personality.caution);
   const resourceValue = (destination.resourceValue / 4) * personality.resourceGreed;
   const constellationValue = constellationProgressValue(faction, destination) * personality.constellationGreed;
+  const destinationTraits = getSystemTypeTraits(destination);
   const typeValue =
-    systemTypeStrategicValue(destination) * (0.35 + personality.fortressPreference * 0.75 + personality.resourceGreed * 0.2);
+    destinationTraits.strategicValue * (0.35 + personality.fortressPreference * 0.75 + personality.resourceGreed * 0.2) +
+    destinationTraits.productionBonus * (personality.expansionBias * 0.28 + personality.resourceGreed * 0.32);
   const opportunityValue = weakTargetValue * (0.4 + personality.opportunism * 1.15);
   const defensivePenalty = originPressure * personality.defensiveBias * personality.caution * 0.7;
   const randomNudge = Math.random() * personality.randomness;
@@ -779,8 +782,10 @@ function scoreNpcDeploymentTarget(faction: FactionId, system: StarSystem, person
   const pressure = normalizedBorderPressure(system, faction);
   const resourceValue = (system.resourceValue / 4) * personality.resourceGreed;
   const constellationValue = constellationProgressValue(faction, system) * personality.constellationGreed;
+  const traits = getSystemTypeTraits(system);
   const typeValue =
-    systemTypeStrategicValue(system) * (0.25 + personality.fortressPreference * 0.95 + personality.defensiveBias * 0.35);
+    traits.strategicValue * (0.25 + personality.fortressPreference * 0.95 + personality.defensiveBias * 0.35) +
+    traits.productionBonus * (0.32 + personality.resourceGreed * 0.45 + personality.expansionBias * 0.22);
   const weakGarrisonNeed = clamp((10 - system.fleetUnits) / 10, 0, 1) * (0.35 + personality.defensiveBias);
   const attackReadiness = system.fleetUnits > 1 ? 0 : 0.35 + personality.aggression * 0.3;
   const randomNudge = Math.random() * personality.randomness;
@@ -811,22 +816,6 @@ function constellationProgressValue(faction: FactionId, destination: StarSystem)
   return clamp(progress + bonus * 0.08 + (wouldComplete ? 0.85 : 0), 0, 1.8);
 }
 
-function systemTypeStrategicValue(system: StarSystem) {
-  switch (system.systemType) {
-    case "fortress":
-      return 1;
-    case "core":
-      return 0.9;
-    case "mining":
-      return 0.72;
-    case "rift":
-      return 0.48;
-    case "frontier":
-    default:
-      return 0.3;
-  }
-}
-
 function normalizedBorderPressure(system: StarSystem, faction: FactionId) {
   return clamp(borderPressure(system, faction) / 28, 0, 1.6);
 }
@@ -855,57 +844,25 @@ function calculateAutoIncursionChance(origin: StarSystem, destination: StarSyste
   const effectiveDefence = calculateEffectiveDefence(destination);
   const originSupportBonus = Math.min(0.12, Math.sqrt(Math.max(0, origin.fleetUnits)) * 0.025);
   const neutralBonus = destination.owner === "neutral" ? 0.1 : 0;
-  const fortressPenalty = destination.systemType === "fortress" ? 0.1 : 0;
+  const originTypeBonus = getSystemTypeTraits(origin).attackBonus;
 
-  return clamp(0.78 - effectiveDefence * 0.035 + originSupportBonus + neutralBonus - fortressPenalty, 0.12, 0.88);
+  return clamp(0.78 - effectiveDefence * 0.035 + originSupportBonus + neutralBonus + originTypeBonus, 0.12, 0.88);
 }
 
 function calculateEffectiveDefence(destination: StarSystem) {
-  const routeDifficulty = difficultyForDestination(destination);
-  const routeModifier = routeDifficultyModifier(routeDifficulty);
   const ownerModifier = destination.owner === "neutral" ? 0.75 : 1;
-  const systemModifier = systemTypeModifier(destination);
+  const systemModifier = getSystemTypeTraits(destination).defenceModifier;
 
-  return Math.max(0, destination.fleetUnits) * routeModifier * ownerModifier * systemModifier;
-}
-
-function routeDifficultyModifier(routeDifficulty: RouteDifficulty) {
-  switch (routeDifficulty) {
-    case "easy":
-      return 0.85;
-    case "hard":
-      return 1.25;
-    case "normal":
-    default:
-      return 1;
-  }
-}
-
-function systemTypeModifier(destination: StarSystem) {
-  switch (destination.systemType) {
-    case "frontier":
-      return 0.9;
-    case "rift":
-      return 1.1;
-    case "core":
-      return 1.15;
-    case "fortress":
-      return 1.3;
-    case "mining":
-    default:
-      return 1;
-  }
+  return Math.max(0, destination.fleetUnits) * ownerModifier * systemModifier;
 }
 
 function generateAutoRawSwarm(originUnitsBefore: number, defenderUnitsBefore: number, destination: StarSystem, effectiveDefence: number) {
-  const routeDifficulty = difficultyForDestination(destination);
   const originSupport = Math.sqrt(Math.max(1, originUnitsBefore)) * 3;
   const defenceReward = Math.sqrt(Math.max(0, defenderUnitsBefore)) * 2.6;
-  const difficultyPenalty = routeDifficulty === "hard" ? 10 : routeDifficulty === "normal" ? 5 : 0;
   const neutralLift = destination.owner === "neutral" ? 8 : 0;
-  const fortressPenalty = destination.systemType === "fortress" ? 6 : 0;
+  const typeDefencePenalty = Math.max(0, getSystemTypeTraits(destination).defenceModifier - 1) * 18;
   const randomSwing = randomInt(-6, 18);
-  const rawSwarm = Math.round(10 + originSupport + defenceReward + neutralLift + randomSwing - effectiveDefence * 0.45 - difficultyPenalty - fortressPenalty);
+  const rawSwarm = Math.round(10 + originSupport + defenceReward + neutralLift + randomSwing - effectiveDefence * 0.45 - typeDefencePenalty);
 
   return Math.round(clamp(rawSwarm, 1, 120));
 }
