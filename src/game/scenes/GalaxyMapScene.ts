@@ -52,6 +52,7 @@ export class GalaxyMapScene extends Phaser.Scene {
   private arrivalEffectPlaying = false;
   private strategyAnimationPlaying = false;
   private activeAction?: GalaxyAction;
+  private lastIdleRenderAt = 0;
 
   constructor() {
     super("GalaxyMapScene");
@@ -62,6 +63,15 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.resetCamera();
     this.render();
     this.playPendingArrivalEffect();
+  }
+
+  update(time: number) {
+    if (time - this.lastIdleRenderAt < 140 || !this.shouldRefreshIdleVisuals()) {
+      return;
+    }
+
+    this.lastIdleRenderAt = time;
+    this.render();
   }
 
   private resetCamera() {
@@ -105,6 +115,15 @@ export class GalaxyMapScene extends Phaser.Scene {
       this.drawGameOver(snapshot);
     }
     this.maybeProcessNpcTurn();
+  }
+
+  private shouldRefreshIdleVisuals() {
+    if (this.arrivalEffectPlaying || this.strategyAnimationPlaying || this.input.activePointer.isDown) {
+      return false;
+    }
+
+    const snapshot = getGalaxySnapshot();
+    return snapshot.turnPhase === "deploy" || snapshot.turnPhase === "fortify" || snapshot.turnPhase === "command";
   }
 
   private isCinematicMode() {
@@ -266,6 +285,7 @@ export class GalaxyMapScene extends Phaser.Scene {
       const isDestination = system.id === this.destinationSystemId;
       const isActionEndpoint = system.id === this.activeAction?.originSystemId || system.id === this.activeAction?.destinationSystemId;
       const radius = system.systemType === "core" ? 19 : system.systemType === "fortress" ? 18 : 16;
+      const isFocused = isSelected || isDestination || isActionEndpoint;
 
       this.drawCueHalo(system, radius, cue, time);
       if (isSelected || isDestination || isActionEndpoint) {
@@ -273,7 +293,7 @@ export class GalaxyMapScene extends Phaser.Scene {
         this.add.circle(this.mapX(system.x), this.mapY(system.y), radius + 18, color, 0.1).setStrokeStyle(5, color, 0.3).setDepth(2.8);
         this.add.circle(this.mapX(system.x), this.mapY(system.y), radius + 11, color, 0.18).setStrokeStyle(3, color, 0.9).setDepth(3);
       }
-      this.drawSystemTypeVisual(system, radius, time);
+      this.drawSystemTypeVisual(system, radius, time, isFocused ? 1.25 : 1);
 
       const body = this.add.circle(this.mapX(system.x), this.mapY(system.y), radius, palette.fill, 0.93).setStrokeStyle(3, palette.stroke, 0.95).setDepth(5);
       body.setInteractive({ useHandCursor: true });
@@ -288,6 +308,7 @@ export class GalaxyMapScene extends Phaser.Scene {
           fontStyle: "900"
         })
         .setOrigin(0.5)
+        .setStroke("#f7fbff", 1.8)
         .setDepth(7);
       this.add
         .text(this.mapX(system.x), this.mapY(system.y) + radius + 6, system.name, {
@@ -343,7 +364,7 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.add.circle(this.mapX(system.x), this.mapY(system.y), (radius + 10) * scale, color, alpha * 0.5).setStrokeStyle(2.2, color, alpha).setDepth(2);
   }
 
-  private drawSystemTypeVisual(system: StarSystem, radius: number, time: number) {
+  private drawSystemTypeVisual(system: StarSystem, radius: number, time: number, intensity: number) {
     const type = this.systemType(system);
     const x = this.mapX(system.x);
     const y = this.mapY(system.y);
@@ -351,55 +372,99 @@ export class GalaxyMapScene extends Phaser.Scene {
 
     switch (type) {
       case "mining":
-        this.drawMiningVisual(x, y, radius, time);
+        this.drawMiningVisual(x, y, radius, time, intensity);
         break;
       case "fortress":
-        this.drawFortressVisual(x, y, radius, palette.stroke);
+        this.drawFortressVisual(x, y, radius, palette.stroke, time, intensity);
         break;
       case "core":
-        this.drawCoreVisual(x, y, radius, palette.stroke);
+        this.drawCoreVisual(x, y, radius, palette.stroke, time, intensity);
         break;
       case "rift":
-        this.drawRiftVisual(x, y, radius, time);
+        this.drawRiftVisual(x, y, radius, time, intensity);
         break;
       case "frontier":
       default:
-        this.add.circle(x, y, radius + 6, 0xd9edf5, 0).setStrokeStyle(1.2, 0xd9edf5, 0.3).setDepth(3.4);
+        this.drawFrontierVisual(x, y, radius, time, intensity);
         break;
     }
   }
 
-  private drawMiningVisual(x: number, y: number, radius: number, time: number) {
-    const orbit = radius + 10;
-    for (let index = 0; index < 3; index += 1) {
-      const angle = time * 0.0008 + index * ((Math.PI * 2) / 3);
-      const pip = this.add.circle(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.82, 2.2, 0xffd45f, 0.92);
-      pip.setStrokeStyle(0.8, 0xfff6b0, 0.75).setDepth(6.2);
-    }
-    this.add.circle(x + radius * 0.62, y - radius * 0.58, 2, 0xfff6b0, 0.72).setDepth(6.1);
+  private drawFrontierVisual(x: number, y: number, radius: number, time: number, intensity: number) {
+    const breathe = 0.5 + Math.sin(time * 0.0018 + x * 0.02) * 0.5;
+    const alpha = Phaser.Math.Linear(0.12, 0.28, breathe) * intensity;
+    const scale = Phaser.Math.Linear(1, 1.08, breathe);
+    this.add.circle(x, y, (radius + 7) * scale, 0xd9edf5, 0).setStrokeStyle(1.2, 0xd9edf5, alpha).setDepth(3.4);
+    const moteAngle = time * 0.00028 + x * 0.015;
+    this.add.circle(x + Math.cos(moteAngle) * (radius + 14), y + Math.sin(moteAngle) * (radius + 11), 1.1, 0xd9f7ff, alpha * 0.78).setDepth(5.7);
   }
 
-  private drawFortressVisual(x: number, y: number, radius: number, ownerStroke: number) {
-    this.add.circle(x, y, radius + 8, 0xd9edf5, 0.02).setStrokeStyle(2.6, 0xd9edf5, 0.58).setDepth(3.5);
+  private drawMiningVisual(x: number, y: number, radius: number, time: number, intensity: number) {
+    const orbit = radius + 14;
+    this.add.circle(x, y, radius + 9, 0xffd45f, 0.045 * intensity).setStrokeStyle(1.8, 0xffd45f, 0.36 * intensity).setDepth(3.6);
+    for (let index = 0; index < 3; index += 1) {
+      const angle = time * 0.00065 + index * ((Math.PI * 2) / 3);
+      const ghostAngle = angle - 0.26;
+      this.add.circle(x + Math.cos(ghostAngle) * orbit, y + Math.sin(ghostAngle) * orbit * 0.82, 3.7, 0xffd45f, 0.2 * intensity).setDepth(6.05);
+      const pip = this.add.circle(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.82, 4.4, 0xffd45f, 0.94 * intensity);
+      pip.setStrokeStyle(1.5, 0xfff6b0, 0.9).setDepth(6.3);
+    }
+    const sparkle = Math.max(0, Math.sin(time * 0.0022 + x * 0.03));
+    for (let index = 0; index < 3; index += 1) {
+      const angle = Math.PI / 7 + index * 2.1;
+      const fragment = this.add.rectangle(x + Math.cos(angle) * (radius + 18), y + Math.sin(angle) * (radius + 14), 3.8, 2.3, 0xfff6b0, (0.42 + sparkle * 0.34) * intensity);
+      fragment.setRotation(angle).setDepth(6.2);
+    }
+  }
+
+  private drawFortressVisual(x: number, y: number, radius: number, ownerStroke: number, time: number, intensity: number) {
+    const shieldPulse = 0.5 + Math.sin(time * 0.0015 + y * 0.02) * 0.5;
+    this.add.circle(x, y, radius + 8, 0xd9edf5, 0.04 * intensity).setStrokeStyle(4.2, 0xd9edf5, Phaser.Math.Linear(0.35, 0.65, shieldPulse) * intensity).setDepth(3.5);
+    this.add.circle(x, y, radius + 14, ownerStroke, 0).setStrokeStyle(1.8, ownerStroke, 0.28 * intensity).setDepth(3.4);
+    const glintIndex = Math.floor(time * 0.00035 + x * 0.01) % 4;
     for (let index = 0; index < 4; index += 1) {
       const angle = -Math.PI / 4 + index * (Math.PI / 2);
-      const plate = this.add.rectangle(x + Math.cos(angle) * (radius + 12), y + Math.sin(angle) * (radius + 12), 11, 4, ownerStroke, 0.82);
-      plate.setRotation(angle).setDepth(5.8);
+      const plate = this.add.rectangle(x + Math.cos(angle) * (radius + 16), y + Math.sin(angle) * (radius + 16), 15, 6.5, 0xd9edf5, 0.94);
+      plate.setStrokeStyle(1, ownerStroke, 0.72).setRotation(angle).setDepth(6.2);
+      if (index === glintIndex) {
+        this.add.rectangle(x + Math.cos(angle) * (radius + 16), y + Math.sin(angle) * (radius + 16), 8, 1.2, 0xffffff, 0.42 * intensity).setRotation(angle).setDepth(6.35);
+      }
     }
   }
 
-  private drawCoreVisual(x: number, y: number, radius: number, ownerStroke: number) {
-    this.add.circle(x, y, radius + 8, ownerStroke, 0.03).setStrokeStyle(1.5, 0x9ee7ff, 0.72).setDepth(3.5);
-    this.add.circle(x, y, radius + 13, 0xffffff, 0.01).setStrokeStyle(1.1, 0xffffff, 0.42).setDepth(3.4);
-    this.add.star(x, y - radius * 0.1, 5, 2.2, 4.8, 0xf7fbff, 0.78).setDepth(6.1);
+  private drawCoreVisual(x: number, y: number, radius: number, ownerStroke: number, time: number, intensity: number) {
+    const innerSpin = time * 0.00045;
+    const outerSpin = -time * 0.00032;
+    const heartbeat = 0.5 + Math.sin(time * 0.0021 + x * 0.01) * 0.5;
+    this.add.circle(x, y, radius + 20, 0x9ee7ff, 0.03 * intensity).setDepth(3.2);
+    this.drawArcSegment(x, y, radius + 9, innerSpin, innerSpin + 1.65, 0x9ee7ff, 0.78 * intensity, 2.3, 3.6);
+    this.drawArcSegment(x, y, radius + 9, innerSpin + Math.PI, innerSpin + Math.PI + 1.35, 0xffffff, 0.52 * intensity, 1.8, 3.6);
+    this.drawArcSegment(x, y, radius + 15, outerSpin, outerSpin + 1.18, 0xffffff, 0.52 * intensity, 1.8, 3.5);
+    this.drawArcSegment(x, y, radius + 15, outerSpin + Math.PI, outerSpin + Math.PI + 1.5, ownerStroke, 0.5 * intensity, 1.8, 3.5);
+    for (let index = 0; index < 4; index += 1) {
+      const angle = outerSpin + index * (Math.PI / 2);
+      this.add.rectangle(x + Math.cos(angle) * (radius + 17), y + Math.sin(angle) * (radius + 17), 5, 1.8, 0x9ee7ff, (0.42 + heartbeat * 0.34) * intensity).setRotation(angle).setDepth(6.1);
+    }
+    this.add.star(x, y - radius * 0.08, 5, 3, 6.4, 0xf7fbff, Phaser.Math.Linear(0.55, 0.9, heartbeat) * intensity).setDepth(6.3);
+    this.add.star(x, y - radius * 0.08, 5, 5.4, 8.8, 0x9ee7ff, Phaser.Math.Linear(0.16, 0.32, heartbeat) * intensity).setDepth(6.2);
   }
 
-  private drawRiftVisual(x: number, y: number, radius: number, time: number) {
-    const spin = (time * 0.0012) % (Math.PI * 2);
-    this.drawArcSegment(x, y, radius + 9, spin, spin + 1.35, 0x66f2ff, 0.78, 2.2, 5.7);
-    this.drawArcSegment(x, y, radius + 9, spin + Math.PI, spin + Math.PI + 1.05, 0x9b6dff, 0.7, 2.2, 5.7);
-    this.add.triangle(x - radius - 7, y + 1, 0, -3, 7, 0, 0, 3, 0x9b6dff, 0.72).setRotation(spin + 0.5).setDepth(5.8);
-    this.add.circle(x + radius + 7, y - 2, 1.9, 0x66f2ff, 0.75).setDepth(5.8);
+  private drawRiftVisual(x: number, y: number, radius: number, time: number, intensity: number) {
+    const cyanSpin = time * 0.0012;
+    const purpleSpin = -time * 0.00085;
+    const flicker = 0.45 + Math.sin(time * 0.006 + x) * 0.35 + Math.sin(time * 0.013 + y) * 0.2;
+    this.add.circle(x, y, radius + 6, 0x9b6dff, 0.045 * intensity).setStrokeStyle(1.4, 0x66f2ff, 0.34 * intensity).setDepth(3.4);
+    this.drawArcSegment(x, y, radius + 13, cyanSpin - 0.3, cyanSpin + 1.15, 0x66f2ff, 0.76 * intensity, 3.2, 6.1);
+    this.drawArcSegment(x, y, radius + 13, purpleSpin + Math.PI + 0.15, purpleSpin + Math.PI + 1.32, 0x9b6dff, 0.72 * intensity, 3.2, 6.1);
+    this.drawArcSegment(x, y, radius + 19, cyanSpin + 1.72, cyanSpin + 2.15, 0xd9f7ff, 0.42 * intensity, 2.2, 6);
+    this.add.triangle(x - radius - 11 + Math.sin(time * 0.002) * 1.5, y + 1, 0, -5, 10, 0, 0, 5, 0x9b6dff, Phaser.Math.Clamp(flicker, 0.25, 0.92) * intensity).setRotation(cyanSpin + 0.55).setDepth(6.2);
+    this.add.circle(x + radius + 11, y - 2 + Math.cos(time * 0.0024) * 1.2, 3.1, 0x66f2ff, Phaser.Math.Clamp(flicker + 0.1, 0.32, 0.95) * intensity).setStrokeStyle(1, 0xd9f7ff, 0.62).setDepth(6.2);
+    const vortexX = x + Math.cos(cyanSpin + 0.9) * (radius + 8);
+    const vortexY = y + Math.sin(cyanSpin + 0.9) * (radius + 6) * 0.78;
+    this.add
+      .circle(vortexX, vortexY, 2.4, 0x07131d, 0.42)
+      .setStrokeStyle(1.2, 0x66f2ff, (0.34 + flicker * 0.18) * intensity)
+      .setDepth(6.1);
   }
 
   private drawArcSegment(x: number, y: number, radius: number, start: number, end: number, color: number, alpha: number, width: number, depth: number) {
@@ -427,49 +492,45 @@ export class GalaxyMapScene extends Phaser.Scene {
         continue;
       }
 
-      const source = new Phaser.Math.Vector2(this.mapX(system.x), this.mapY(system.y));
-      const color = this.systemType(system) === "mining" ? 0xffd45f : 0x9ee7ff;
-      this.drawProductionPulse(source, phaseTarget, color, this.systemType(system) === "mining" ? 0.18 : 0);
+      const type = this.systemType(system);
+      const source = this.productionSourcePoint(system, type, this.time.now);
+      const color = type === "mining" ? 0xffd45f : 0x9ee7ff;
+      this.drawProductionPulse(source, phaseTarget, color, type === "mining" ? 0.18 : 0, this.time.now);
     }
   }
 
-  private drawProductionPulse(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, color: number, delaySeconds: number) {
-    const particle = this.add.circle(source.x, source.y, 3.2, color, 0.86).setStrokeStyle(1, 0xffffff, 0.55).setDepth(62);
-    this.tweens.add({
-      targets: particle,
-      x: target.x,
-      y: target.y,
-      alpha: 0,
-      scale: 0.5,
-      delay: delaySeconds * 1000,
-      duration: 980,
-      ease: "Sine.easeInOut",
-      onComplete: () => particle.destroy()
-    });
+  private productionSourcePoint(system: StarSystem, type: SystemType, time: number) {
+    const x = this.mapX(system.x);
+    const y = this.mapY(system.y);
+    if (type !== "mining") {
+      return new Phaser.Math.Vector2(x, y);
+    }
+
+    const radius = system.systemType === "core" ? 19 : system.systemType === "fortress" ? 18 : 16;
+    const orbit = radius + 14;
+    const cycle = Math.floor(time / 1500) % 3;
+    const angle = time * 0.00065 + cycle * ((Math.PI * 2) / 3);
+    return new Phaser.Math.Vector2(x + Math.cos(angle) * orbit, y + Math.sin(angle) * orbit * 0.82);
+  }
+
+  private drawProductionPulse(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, color: number, delaySeconds: number, time: number) {
+    const cycleMs = 1500;
+    const t = ((time + delaySeconds * 1000) % cycleMs) / cycleMs;
+    const eased = Phaser.Math.Easing.Sine.InOut(t);
+    const x = Phaser.Math.Linear(source.x, target.x, eased);
+    const y = Phaser.Math.Linear(source.y, target.y, eased);
+    const alpha = Phaser.Math.Clamp(1 - t, 0.15, 0.9);
+    this.add.line(0, 0, source.x, source.y, target.x, target.y, color, 0.08 + alpha * 0.08).setOrigin(0, 0).setLineWidth(2.2).setDepth(61);
+    this.add.circle(x, y, 4.4 - t * 1.8, color, alpha).setStrokeStyle(1.4, 0xffffff, 0.55 * alpha).setDepth(62);
   }
 
   private drawConstellationBonusPulse(x: number, y: number, width: number, height: number, color: number) {
-    const pulse = this.add.ellipse(x, y, width + 12, height + 10, color, 0.03).setStrokeStyle(1.7, color, 0.22).setDepth(0.7);
-    this.tweens.add({
-      targets: pulse,
-      alpha: 0,
-      scale: 1.06,
-      duration: 1100,
-      ease: "Sine.easeOut",
-      onComplete: () => pulse.destroy()
-    });
-
-    const particle = this.add.circle(x, y, 3.6, color, 0.72).setDepth(62);
-    this.tweens.add({
-      targets: particle,
-      x: 39,
-      y: 118,
-      alpha: 0,
-      scale: 0.5,
-      duration: 1120,
-      ease: "Sine.easeInOut",
-      onComplete: () => particle.destroy()
-    });
+    const cycle = (this.time.now % 1900) / 1900;
+    const alpha = 0.22 * (1 - cycle);
+    this.add.ellipse(x, y, (width + 12) * (1 + cycle * 0.06), (height + 10) * (1 + cycle * 0.06), color, 0.025).setStrokeStyle(1.7, color, alpha).setDepth(0.7);
+    const particleX = Phaser.Math.Linear(x, 39, Phaser.Math.Easing.Sine.InOut(cycle));
+    const particleY = Phaser.Math.Linear(y, 118, Phaser.Math.Easing.Sine.InOut(cycle));
+    this.add.circle(particleX, particleY, 3.6 - cycle * 1.5, color, 0.72 * (1 - cycle)).setDepth(62);
   }
 
   private drawActionBadge(snapshot: GalaxySnapshot) {
@@ -607,7 +668,7 @@ export class GalaxyMapScene extends Phaser.Scene {
 
     this.drawAttackOriginPips(originX, originY, originType);
     this.drawAttackRouteEnergy(originX, originY, destinationX, destinationY, particleCount, originType);
-    this.drawTargetDefencePips(destinationX, destinationY, destinationTraits.defenceModifier, this.systemType(destination));
+    this.drawTargetDefencePips(destinationX, destinationY, destinationTraits.defenceModifier, this.systemType(destination), this.time.now);
   }
 
   private drawAttackOriginPips(x: number, y: number, originType: SystemType) {
@@ -615,13 +676,14 @@ export class GalaxyMapScene extends Phaser.Scene {
     const count = originType === "rift" || originType === "core" ? 4 : 3;
     for (let index = 0; index < count; index += 1) {
       const angle = -Math.PI / 2 + index * ((Math.PI * 2) / count);
-      this.add.circle(x + Math.cos(angle) * 30, y + Math.sin(angle) * 25, 2.3, color, 0.9).setDepth(8.2);
+      this.add.circle(x + Math.cos(angle) * 33, y + Math.sin(angle) * 28, 3, color, 0.95).setStrokeStyle(1, 0xffffff, 0.45).setDepth(8.2);
     }
     if (originType === "rift") {
-      this.drawArcSegment(x, y, 34, -0.45, 0.72, 0x66f2ff, 0.82, 2.4, 8.1);
+      this.drawArcSegment(x, y, 38, -0.45, 0.86, 0x66f2ff, 0.92, 3.2, 8.1);
+      this.drawArcSegment(x, y, 43, 2.4, 3.35, 0x9b6dff, 0.86, 2.6, 8.1);
     }
     if (originType === "core") {
-      this.add.circle(x, y, 31, 0xffffff, 0).setStrokeStyle(1.8, 0x9ee7ff, 0.78).setDepth(8.1);
+      this.add.circle(x, y, 34, 0xffffff, 0.03).setStrokeStyle(2.2, 0x9ee7ff, 0.84).setDepth(8.1);
     }
   }
 
@@ -631,20 +693,24 @@ export class GalaxyMapScene extends Phaser.Scene {
       const t = 0.2 + (index / Math.max(1, count - 1)) * 0.58;
       const x = Phaser.Math.Linear(originX, destinationX, t);
       const y = Phaser.Math.Linear(originY, destinationY, t);
-      this.add.circle(x, y, 2.4, color, 0.76).setDepth(8.4);
+      this.add.circle(x, y, originType === "rift" ? 3 : 2.6, color, 0.82).setDepth(8.4);
+    }
+    if (originType === "rift" || originType === "core") {
+      this.add.line(0, 0, originX, originY, destinationX, destinationY, color, originType === "rift" ? 0.26 : 0.18).setOrigin(0, 0).setLineWidth(originType === "rift" ? 4 : 3).setDepth(7.5);
     }
   }
 
-  private drawTargetDefencePips(x: number, y: number, defenceModifier: number, targetType: SystemType) {
+  private drawTargetDefencePips(x: number, y: number, defenceModifier: number, targetType: SystemType, time: number) {
     const count = Phaser.Math.Clamp(Math.round(defenceModifier * 3), 2, 4);
     const color = targetType === "fortress" ? 0xd9edf5 : targetType === "core" ? 0x9ee7ff : 0x8da2b5;
     for (let index = 0; index < count; index += 1) {
       const angle = Math.PI / 4 + index * ((Math.PI * 2) / count);
-      this.add.rectangle(x + Math.cos(angle) * 31, y + Math.sin(angle) * 27, 6, 3, color, 0.82).setRotation(angle).setDepth(8.3);
+      this.add.rectangle(x + Math.cos(angle) * 34, y + Math.sin(angle) * 30, targetType === "fortress" ? 10 : 7, targetType === "fortress" ? 4.8 : 3.4, color, 0.88).setRotation(angle).setDepth(8.3);
     }
     if (targetType === "fortress" || targetType === "core") {
-      const ring = this.add.circle(x, y, targetType === "fortress" ? 34 : 31, color, 0.04).setStrokeStyle(targetType === "fortress" ? 3 : 2, color, 0.76).setDepth(8.1);
-      this.tweens.add({ targets: ring, alpha: 0, scale: 1.16, duration: 720, ease: "Sine.easeOut", onComplete: () => ring.destroy() });
+      const pulse = 0.5 + Math.sin(time * 0.0032 + x * 0.01) * 0.5;
+      const radius = (targetType === "fortress" ? 37 : 34) * Phaser.Math.Linear(1, 1.16, pulse);
+      this.add.circle(x, y, radius, color, 0.04).setStrokeStyle(targetType === "fortress" ? 4 : 2.6, color, Phaser.Math.Linear(0.48, 0.86, pulse)).setDepth(8.1);
     }
   }
 
