@@ -96,9 +96,6 @@ export class GalaxyMapScene extends Phaser.Scene {
     const cinematicMode = this.isCinematicMode();
     this.drawBackground();
     this.drawConstellations(snapshot.systems, snapshot.constellations, snapshot.turnPhase);
-    if (!cinematicMode) {
-      this.drawPhaseHud(snapshot);
-    }
     this.drawStarlanes(snapshot.systems);
     this.drawSystems(snapshot);
     if (!cinematicMode && snapshot.turnPhase === "deploy") {
@@ -111,6 +108,7 @@ export class GalaxyMapScene extends Phaser.Scene {
       this.drawCommandStrip(snapshot);
       this.drawDebugLog(snapshot);
     }
+    this.drawPhaseHud(snapshot);
     if (snapshot.turnPhase === "gameOver") {
       this.drawGameOver(snapshot);
     }
@@ -173,7 +171,7 @@ export class GalaxyMapScene extends Phaser.Scene {
   private drawPhaseHud(snapshot: GalaxySnapshot) {
     this.add.rectangle(39, 360, 78, 720, 0x03101b, 0.66).setStrokeStyle(1.2, 0x315a77, 0.58).setDepth(45);
     this.add
-      .text(39, 34, "TURN 7", {
+      .text(39, 34, `TURN ${snapshot.turnNumber}`, {
         color: "#7ee4ff",
         fontFamily: "Inter, sans-serif",
         fontSize: "10px",
@@ -956,11 +954,20 @@ export class GalaxyMapScene extends Phaser.Scene {
     }
 
     this.animateStrategicAttack(attack.origin, attack.destination, () => {
-      const runInput = commitMoveOrder({
-        originSystemId: attack.origin.id,
-        destinationSystemId: attack.destination.id,
-        unitsCommitted: 1
-      });
+      let runInput: ReturnType<typeof commitMoveOrder>;
+      try {
+        runInput = commitMoveOrder({
+          originSystemId: attack.origin.id,
+          destinationSystemId: attack.destination.id,
+          unitsCommitted: 1
+        });
+      } catch (error) {
+        console.error("Strategic attack commit failed", error);
+        this.finishStrategicAttackAnimation();
+        this.render();
+        return;
+      }
+
       this.finishStrategicAttackAnimation();
       if (runInput) {
         gameEvents.emit("galaxy:start-run", runInput);
@@ -979,7 +986,18 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.clearSelection();
     this.strategyAnimationPlaying = true;
     this.arrivalEffectPlaying = true;
-    const effect = autoResolveStrategicBattle(attack.origin.id, attack.destination.id);
+    let effect: ReturnType<typeof autoResolveStrategicBattle>;
+    try {
+      effect = autoResolveStrategicBattle(attack.origin.id, attack.destination.id);
+    } catch (error) {
+      console.error("Auto strategic battle failed", error);
+      this.strategyAnimationPlaying = false;
+      this.arrivalEffectPlaying = false;
+      this.activeAction = undefined;
+      this.render();
+      return;
+    }
+
     this.strategyAnimationPlaying = false;
 
     if (effect) {
@@ -1022,11 +1040,18 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.clearSelection();
     this.strategyAnimationPlaying = true;
     this.render();
-    this.animateRouteTransfer(origin, destination, "player", () => {
+    try {
+      this.animateRouteTransfer(origin, destination, "player", () => {
+        this.strategyAnimationPlaying = false;
+        this.activeAction = undefined;
+        this.render();
+      });
+    } catch (error) {
+      console.error("Redeploy animation failed", error);
       this.strategyAnimationPlaying = false;
       this.activeAction = undefined;
       this.render();
-    });
+    }
   }
 
   private defaultFortifyUnits(originUnits: number, maxMovable: number) {
@@ -1084,7 +1109,13 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.clearSelection();
     this.strategyAnimationPlaying = true;
     this.render();
-    this.playDirectionalAttackAnimation(origin, destination, {}, onComplete);
+    try {
+      this.playDirectionalAttackAnimation(origin, destination, {}, onComplete);
+    } catch (error) {
+      console.error("Strategic attack animation failed", error);
+      this.finishStrategicAttackAnimation();
+      this.render();
+    }
   }
 
   private finishStrategicAttackAnimation() {
@@ -1344,22 +1375,30 @@ export class GalaxyMapScene extends Phaser.Scene {
 
     this.npcProcessing = true;
     this.time.delayedCall(560, () => {
-      const before = getGalaxySnapshot();
-      const { action, completedRound } = executeNextNpcTurn();
-      this.activeAction = action;
-      this.strategyAnimationPlaying = true;
-      this.render();
-      this.animateNpcAction(action, before.systems, () => {
+      try {
+        const before = getGalaxySnapshot();
+        const { action, completedRound } = executeNextNpcTurn();
+        this.activeAction = action;
+        this.strategyAnimationPlaying = true;
+        this.render();
+        this.animateNpcAction(action, before.systems, () => {
+          this.npcProcessing = false;
+          this.strategyAnimationPlaying = false;
+          if (completedRound) {
+            this.activeAction = undefined;
+            finishNpcRound();
+          } else {
+            this.activeAction = undefined;
+          }
+          this.render();
+        });
+      } catch (error) {
+        console.error("NPC turn animation failed", error);
         this.npcProcessing = false;
         this.strategyAnimationPlaying = false;
-        if (completedRound) {
-          this.activeAction = undefined;
-          finishNpcRound();
-        } else {
-          this.activeAction = undefined;
-        }
+        this.activeAction = undefined;
         this.render();
-      });
+      }
     });
   }
 
@@ -1472,6 +1511,9 @@ export class GalaxyMapScene extends Phaser.Scene {
     const destination = snapshot.systems.find((system) => system.id === effect.destinationSystemId);
     if (!origin || !destination) {
       this.arrivalEffectPlaying = false;
+      this.activeAction = undefined;
+      this.resetCamera();
+      this.render();
       return;
     }
 
