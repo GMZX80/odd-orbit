@@ -74,37 +74,18 @@ export class GalaxyMapScene extends Phaser.Scene {
     this.children.removeAll(true);
     const snapshot = getGalaxySnapshot();
     const cinematicMode = this.isCinematicMode();
-    this.mapRenderer.drawBackground();
-    this.mapRenderer.drawConstellations(snapshot.systems, snapshot.constellations, snapshot.turnPhase);
-    this.mapRenderer.drawStarlanes({
-      systems: snapshot.systems,
-      selectedSystemId: this.selectedSystemId,
-      destinationSystemId: this.destinationSystemId,
-      activeAction: this.activeAction
-    });
-    this.mapRenderer.drawSystems({
+    this.mapRenderer.drawGalaxyMap({
       snapshot,
       selectedSystemId: this.selectedSystemId,
       destinationSystemId: this.destinationSystemId,
       activeAction: this.activeAction,
       arrivalEffectPlaying: this.arrivalEffectPlaying,
       strategyAnimationPlaying: this.strategyAnimationPlaying,
-      onSystemClick: (systemId) => this.handleSystemClick(systemId)
+      cinematicMode,
+      onSystemClick: (systemId) => this.handleSystemClick(systemId),
+      drawCommandPanel: () => this.drawCommandPanel(snapshot),
+      drawPhaseHud: () => drawPhaseHud(this, snapshot)
     });
-    if (!cinematicMode && snapshot.turnPhase === "deploy") {
-      this.mapRenderer.drawDeployProductionEffects(snapshot);
-    }
-    if (cinematicMode) {
-      this.mapRenderer.drawCinematicShade();
-    } else {
-      this.mapRenderer.drawActionBadge({ snapshot, activeAction: this.activeAction, arrivalEffectPlaying: this.arrivalEffectPlaying });
-      this.drawCommandPanel(snapshot);
-      this.mapRenderer.drawDebugLog(snapshot);
-    }
-    drawPhaseHud(this, snapshot);
-    if (snapshot.turnPhase === "gameOver") {
-      this.mapRenderer.drawGameOver(snapshot);
-    }
     this.maybeProcessNpcTurn();
   }
 

@@ -31,8 +31,55 @@ export interface DrawActionBadgeOptions {
   arrivalEffectPlaying: boolean;
 }
 
+export interface DrawGalaxyMapOptions {
+  snapshot: GalaxySnapshot;
+  selectedSystemId?: string;
+  destinationSystemId?: string;
+  activeAction?: GalaxyAction;
+  arrivalEffectPlaying: boolean;
+  strategyAnimationPlaying: boolean;
+  cinematicMode: boolean;
+  onSystemClick: (systemId: string) => void;
+  drawCommandPanel: () => void;
+  drawPhaseHud: () => void;
+}
+
 export class GalaxyMapRenderer {
   constructor(private readonly scene: Phaser.Scene) {}
+
+  drawGalaxyMap(options: DrawGalaxyMapOptions) {
+    this.drawBackground();
+    this.drawConstellations(options.snapshot.systems, options.snapshot.constellations, options.snapshot.turnPhase);
+    this.drawStarlanes({
+      systems: options.snapshot.systems,
+      selectedSystemId: options.selectedSystemId,
+      destinationSystemId: options.destinationSystemId,
+      activeAction: options.activeAction
+    });
+    this.drawSystems({
+      snapshot: options.snapshot,
+      selectedSystemId: options.selectedSystemId,
+      destinationSystemId: options.destinationSystemId,
+      activeAction: options.activeAction,
+      arrivalEffectPlaying: options.arrivalEffectPlaying,
+      strategyAnimationPlaying: options.strategyAnimationPlaying,
+      onSystemClick: options.onSystemClick
+    });
+    if (!options.cinematicMode && options.snapshot.turnPhase === "deploy") {
+      this.drawDeployProductionEffects(options.snapshot);
+    }
+    if (options.cinematicMode) {
+      this.drawCinematicShade();
+    } else {
+      this.drawActionBadge({ snapshot: options.snapshot, activeAction: options.activeAction, arrivalEffectPlaying: options.arrivalEffectPlaying });
+      options.drawCommandPanel();
+      this.drawDebugLog(options.snapshot);
+    }
+    options.drawPhaseHud();
+    if (options.snapshot.turnPhase === "gameOver") {
+      this.drawGameOver(options.snapshot);
+    }
+  }
 
   drawCinematicShade() {
     this.scene.add.rectangle(195, 360, 390, 720, 0x020913, 0.34).setDepth(20);
