@@ -147,8 +147,9 @@ export class GalaxyCommandPanel {
         callbacks.onSetFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
       }
     });
-    drawGalaxyButton(this.scene, 96, 676, 112, 34, "Cancel", callbacks.onCancelDestination, "ghost");
-    drawGalaxyButton(this.scene, 250, 676, 112, 34, "Redeploy", callbacks.onExecuteFortify, "primary");
+    drawGalaxyButton(this.scene, 96, 676, 78, 34, "Cancel", callbacks.onCancelDestination, "ghost");
+    drawGalaxyButton(this.scene, 190, 676, 94, 34, "Redeploy", callbacks.onExecuteFortify, "primary");
+    drawGalaxyButton(this.scene, 300, 676, 64, 34, "End", callbacks.onEndFortify, "secondary");
     this.mapRenderer.drawRouteArrow(origin, destination, 0x7ee4ff);
   }
 

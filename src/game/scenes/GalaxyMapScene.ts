@@ -141,11 +141,7 @@ export class GalaxyMapScene extends Phaser.Scene {
           this.clearSelection();
           this.render();
         },
-        onEndFortify: () => {
-          finishFortifyPhase();
-          this.clearSelection();
-          this.render();
-        },
+        onEndFortify: () => this.endFortifyPhase(),
         onCancelSelection: () => {
           this.clearSelection();
           this.render();
@@ -366,6 +362,17 @@ export class GalaxyMapScene extends Phaser.Scene {
       this.activeAction = undefined;
       this.render();
     }
+  }
+
+  private endFortifyPhase() {
+    const ended = finishFortifyPhase();
+    this.clearSelection();
+
+    if (!ended) {
+      console.warn("Unable to end fortify phase", getGalaxySnapshot());
+    }
+
+    this.render();
   }
 
   private defaultFortifyUnits(originUnits: number, maxMovable: number) {

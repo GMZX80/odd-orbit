@@ -465,6 +465,17 @@ export function canFortifyMove(originSystemId: string, destinationSystemId: stri
   );
 }
 
+export function hasAnyFortifyMove(faction: FactionId = "player") {
+  const systemById = new Map(systems.map((system) => [system.id, system]));
+
+  return systems.some(
+    (origin) =>
+      origin.owner === faction &&
+      origin.fleetUnits > 1 &&
+      origin.neighbours.some((neighbourId) => systemById.get(neighbourId)?.owner === faction)
+  );
+}
+
 export function executeFortify(originSystemId: string, destinationSystemId: string, unitsCommitted: number) {
   if (!canFortifyMove(originSystemId, destinationSystemId, unitsCommitted)) {
     return false;
@@ -592,7 +603,7 @@ function enterFortifyPhase() {
   turnPhase = "fortify";
   lastResolution = {
     title: "Redeploy Phase",
-    detail: "Optionally move fleet units between connected blue systems."
+    detail: hasAnyFortifyMove("player") ? "Optionally move fleet units between connected blue systems." : "No legal redeploy is available. Press End to command."
   };
 }
 
