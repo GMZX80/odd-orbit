@@ -1,11 +1,50 @@
 import Phaser from "phaser";
 import { estimateAutoIncursionChance, getFactionName, type getGalaxySnapshot } from "../systems/galaxyState";
 import type { StarSystem } from "../systems/galaxyTypes";
-import { drawBottomSheet, drawGalaxyButton } from "./GalaxyButton";
+import {
+  GALAXY_COMMAND_MAP_CENTER_X,
+  GALAXY_COMMAND_MAP_LEFT,
+  GALAXY_COMMAND_MAP_RIGHT,
+  GALAXY_COMMAND_NODE_DEPTH,
+  GALAXY_COMMAND_TRAY_DEPTH,
+  drawGalaxyCommandNode,
+  drawGalaxyCommandPad,
+  drawGalaxyCommandTray,
+  drawGalaxyPhaseCommand
+} from "./GalaxyButton";
 import { GalaxyMapRenderer } from "./GalaxyMapRenderer";
 import { ownerPalette } from "./ownerPalette";
 
 type GalaxySnapshot = ReturnType<typeof getGalaxySnapshot>;
+
+const MAP_WIDTH = GALAXY_COMMAND_MAP_RIGHT - GALAXY_COMMAND_MAP_LEFT;
+const ATTACK_TRAY_W = 306;
+const ATTACK_TRAY_H = 96;
+const ATTACK_TRAY_X = GALAXY_COMMAND_MAP_LEFT + (MAP_WIDTH - ATTACK_TRAY_W) / 2;
+const ATTACK_TRAY_Y = 608;
+const ATTACK_COMMAND_Y = 660;
+const ATTACK_CANCEL_X = GALAXY_COMMAND_MAP_CENTER_X - 100;
+const ATTACK_PLAY_X = GALAXY_COMMAND_MAP_CENTER_X;
+const ATTACK_AUTO_X = GALAXY_COMMAND_MAP_CENTER_X + 100;
+const REDEPLOY_PANEL_W = 306;
+const REDEPLOY_PANEL_H = 106;
+const REDEPLOY_PANEL_X = GALAXY_COMMAND_MAP_LEFT + (MAP_WIDTH - REDEPLOY_PANEL_W) / 2;
+const REDEPLOY_PANEL_Y = 602;
+const REDEPLOY_PANEL_CX = REDEPLOY_PANEL_X + REDEPLOY_PANEL_W / 2;
+const REDEPLOY_STEPPER_Y = REDEPLOY_PANEL_Y + 28;
+const REDEPLOY_ACTION_Y = REDEPLOY_PANEL_Y + 78;
+const REDEPLOY_CANCEL_X = GALAXY_COMMAND_MAP_CENTER_X - 114;
+const REDEPLOY_ACTION_X = GALAXY_COMMAND_MAP_CENTER_X;
+const REDEPLOY_END_X = GALAXY_COMMAND_MAP_CENTER_X + 114;
+const COMMAND_NODE_DEPTH = GALAXY_COMMAND_NODE_DEPTH;
+const SMALL_COMMAND_RADIUS = 33;
+const MEDIUM_COMMAND_RADIUS = 36;
+const LARGE_COMMAND_RADIUS = 40;
+const STEPPER_BUTTON_W = 44;
+const STEPPER_BUTTON_H = 34;
+const STEPPER_VALUE_W = 98;
+const STEPPER_VALUE_H = 34;
+const ACTION_BUTTON_H = 38;
 
 export interface GalaxyCommandPanelCallbacks {
   onSkipDeploy: () => void;
@@ -17,7 +56,7 @@ export interface GalaxyCommandPanelCallbacks {
   onAutoResolveMove: () => void;
   onExecuteFortify: () => void;
   getFortifyUnits: (originUnits: number, maxMovable: number) => number;
-  onSetFortifyUnitsFromSlider: (pointerX: number, sliderX: number, sliderW: number, originUnits: number, maxMovable: number) => void;
+  onAdjustFortifyUnits: (delta: number, originUnits: number, maxMovable: number) => void;
 }
 
 export interface DrawCommandPanelOptions {
@@ -28,17 +67,20 @@ export interface DrawCommandPanelOptions {
 }
 
 export class GalaxyCommandPanel {
+  private commandObjects: Phaser.GameObjects.GameObject[] = [];
+
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly mapRenderer: GalaxyMapRenderer
   ) {}
 
   draw(options: DrawCommandPanelOptions) {
+    this.clearCommandControls();
     const origin = options.snapshot.systems.find((system) => system.id === options.selectedSystemId);
     const destination = options.snapshot.systems.find((system) => system.id === options.destinationSystemId);
 
     if (options.snapshot.turnPhase === "deploy") {
-      drawGalaxyButton(this.scene, 318, 674, 50, 28, "Skip", options.callbacks.onSkipDeploy);
+      this.track(drawGalaxyPhaseCommand(this.scene, "Skip", options.callbacks.onSkipDeploy));
       return;
     }
 
@@ -47,9 +89,20 @@ export class GalaxyCommandPanel {
         this.drawAttackChoice(origin, destination, options.callbacks);
         return;
       }
-      drawGalaxyButton(this.scene, 248, 660, 120, 42, "End Turn", options.callbacks.onEndCommand);
+      this.track(drawGalaxyPhaseCommand(this.scene, "End Turn", options.callbacks.onEndCommand));
       if (origin) {
-        drawGalaxyButton(this.scene, 22, 674, 68, 28, "Cancel", options.callbacks.onCancelSelection);
+        this.track(
+          drawGalaxyCommandNode({
+            scene: this.scene,
+            x: GALAXY_COMMAND_MAP_LEFT + 38,
+            y: 654,
+            radius: 30,
+            label: "Cancel",
+            variant: "neutral",
+            depth: COMMAND_NODE_DEPTH,
+            onActivate: options.callbacks.onCancelSelection
+          })
+        );
       }
       return;
     }
@@ -59,9 +112,20 @@ export class GalaxyCommandPanel {
         this.drawRedeployPanel(origin, destination, options.callbacks);
         return;
       }
-      drawGalaxyButton(this.scene, 210, 660, 158, 42, "End Redeploy", options.callbacks.onEndFortify);
+      this.track(drawGalaxyPhaseCommand(this.scene, "End Redeploy", options.callbacks.onEndFortify));
       if (origin) {
-        drawGalaxyButton(this.scene, 22, 674, 68, 28, "Cancel", options.callbacks.onCancelSelection);
+        this.track(
+          drawGalaxyCommandNode({
+            scene: this.scene,
+            x: GALAXY_COMMAND_MAP_LEFT + 38,
+            y: 654,
+            radius: 30,
+            label: "Cancel",
+            variant: "neutral",
+            depth: COMMAND_NODE_DEPTH,
+            onActivate: options.callbacks.onCancelSelection
+          })
+        );
       }
       return;
     }
@@ -74,14 +138,44 @@ export class GalaxyCommandPanel {
 
   private drawAttackChoice(origin: StarSystem, destination: StarSystem, callbacks: GalaxyCommandPanelCallbacks) {
     const odds = Math.round(estimateAutoIncursionChance(origin.id, destination.id) * 100);
-    const dockX = 92;
-    const dockY = 632;
-    const dockW = 282;
-    const dockH = 58;
-    this.scene.add.rectangle(dockX + dockW / 2, dockY + dockH / 2, dockW, dockH, 0x07131d, 0.82).setStrokeStyle(1.8, 0x66f2a8, 0.42).setDepth(58);
-    drawGalaxyButton(this.scene, 108, 648, 64, 30, "Cancel", callbacks.onCancelDestination, "ghost");
-    drawGalaxyButton(this.scene, 184, 642, 76, 40, "Play", callbacks.onLaunchMove, "primary");
-    drawGalaxyButton(this.scene, 272, 648, 84, 30, `Auto ${odds}%`, callbacks.onAutoResolveMove, "secondary");
+    this.track(drawGalaxyCommandTray({ scene: this.scene, x: ATTACK_TRAY_X, y: ATTACK_TRAY_Y, width: ATTACK_TRAY_W, height: ATTACK_TRAY_H, accent: 0x66f2a8 }));
+    this.track(
+      drawGalaxyCommandNode({
+        scene: this.scene,
+        x: ATTACK_CANCEL_X,
+        y: ATTACK_COMMAND_Y,
+        radius: SMALL_COMMAND_RADIUS,
+        label: "Cancel",
+        variant: "neutral",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onCancelDestination
+      })
+    );
+    this.track(
+      drawGalaxyCommandNode({
+        scene: this.scene,
+        x: ATTACK_PLAY_X,
+        y: ATTACK_COMMAND_Y,
+        radius: LARGE_COMMAND_RADIUS,
+        label: "Play",
+        variant: "primary",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onLaunchMove
+      })
+    );
+    this.track(
+      drawGalaxyCommandNode({
+        scene: this.scene,
+        x: ATTACK_AUTO_X,
+        y: ATTACK_COMMAND_Y,
+        radius: MEDIUM_COMMAND_RADIUS,
+        label: "Auto",
+        subLabel: `${odds}%`,
+        variant: "secondary",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onAutoResolveMove
+      })
+    );
     this.mapRenderer.drawAttackPreview(origin, destination, odds / 100);
     this.mapRenderer.drawRouteArrow(origin, destination, 0x66f2a8);
   }
@@ -89,68 +183,117 @@ export class GalaxyCommandPanel {
   private drawRedeployPanel(origin: StarSystem, destination: StarSystem, callbacks: GalaxyCommandPanelCallbacks) {
     const maxMovable = Math.max(1, origin.fleetUnits - 1);
     const units = callbacks.getFortifyUnits(origin.fleetUnits, maxMovable);
-    const panelCx = 235;
-    const sliderX = 108;
-    const sliderY = 638;
-    const sliderW = 254;
-    const ratio = maxMovable <= 1 ? 1 : (units - 1) / (maxMovable - 1);
 
-    drawBottomSheet(this.scene, 148, 0x7ee4ff);
-    this.scene.add.rectangle(panelCx, 579, 34, 4, 0x7ee4ff, 0.72).setDepth(59);
-    this.scene.add
-      .text(panelCx - 36, 596, origin.name, {
-        color: "#ffe66f",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "14px",
-        fontStyle: "900"
-      })
-      .setOrigin(1, 0.5)
-      .setDepth(72);
-    this.scene.add
-      .text(panelCx, 596, "->", {
-        color: "#66f2a8",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "15px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(72);
-    this.scene.add
-      .text(panelCx + 36, 596, destination.name, {
-        color: "#66f2a8",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "14px",
-        fontStyle: "900"
-      })
-      .setOrigin(0, 0.5)
-      .setDepth(72);
-    this.scene.add
-      .text(panelCx, 624, `${units} units`, {
-        color: "#f7fbff",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "28px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setDepth(72);
+    this.track(drawGalaxyCommandTray({ scene: this.scene, x: REDEPLOY_PANEL_X, y: REDEPLOY_PANEL_Y, width: REDEPLOY_PANEL_W, height: REDEPLOY_PANEL_H, accent: 0x7ee4ff }));
+    this.trackObject(this.scene.add.rectangle(REDEPLOY_PANEL_CX, REDEPLOY_PANEL_Y + 10, 74, 3, 0x7ee4ff, 0.42).setDepth(GALAXY_COMMAND_TRAY_DEPTH + 1));
 
-    this.scene.add.rectangle(sliderX + sliderW / 2, sliderY + 15, sliderW, 6, 0x24445b, 0.9).setDepth(72);
-    this.scene.add.rectangle(sliderX + (sliderW * ratio) / 2, sliderY + 15, Math.max(4, sliderW * ratio), 6, 0x66f2a8, 0.96).setDepth(73);
-    this.scene.add.circle(sliderX + sliderW * ratio, sliderY + 15, 12, 0xf7fbff, 0.98).setStrokeStyle(2, 0x7ee4ff, 0.9).setDepth(74);
-    const sliderHit = this.scene.add.rectangle(sliderX + sliderW / 2, sliderY, sliderW + 16, 34, 0xffffff, 0).setDepth(63);
-    sliderHit.setInteractive({ useHandCursor: true });
-    sliderHit.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
-      callbacks.onSetFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
-    });
-    sliderHit.on("pointermove", (pointer: Phaser.Input.Pointer) => {
-      if (pointer.isDown) {
-        callbacks.onSetFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
-      }
-    });
-    drawGalaxyButton(this.scene, 92, 676, 76, 34, "Cancel", callbacks.onCancelDestination, "ghost");
-    drawGalaxyButton(this.scene, 178, 672, 104, 42, "Redeploy", callbacks.onExecuteFortify, "primary");
-    drawGalaxyButton(this.scene, 296, 672, 72, 42, "End", callbacks.onEndFortify, "secondary");
+    this.drawStepperValue(units);
+    this.track(
+      drawGalaxyCommandPad({
+        scene: this.scene,
+        x: REDEPLOY_PANEL_CX - 82,
+        y: REDEPLOY_STEPPER_Y,
+        width: STEPPER_BUTTON_W,
+        height: STEPPER_BUTTON_H,
+        label: "-",
+        variant: "secondary",
+        enabled: units > 1,
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: () => callbacks.onAdjustFortifyUnits(-1, origin.fleetUnits, maxMovable)
+      })
+    );
+    this.track(
+      drawGalaxyCommandPad({
+        scene: this.scene,
+        x: REDEPLOY_PANEL_CX + 82,
+        y: REDEPLOY_STEPPER_Y,
+        width: STEPPER_BUTTON_W,
+        height: STEPPER_BUTTON_H,
+        label: "+",
+        variant: "secondary",
+        enabled: units < maxMovable,
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: () => callbacks.onAdjustFortifyUnits(1, origin.fleetUnits, maxMovable)
+      })
+    );
+    this.track(
+      drawGalaxyCommandPad({
+        scene: this.scene,
+        x: REDEPLOY_CANCEL_X,
+        y: REDEPLOY_ACTION_Y,
+        width: 74,
+        height: ACTION_BUTTON_H,
+        label: "Cancel",
+        variant: "neutral",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onCancelDestination
+      })
+    );
+    this.track(
+      drawGalaxyCommandPad({
+        scene: this.scene,
+        x: REDEPLOY_ACTION_X,
+        y: REDEPLOY_ACTION_Y,
+        width: 106,
+        height: ACTION_BUTTON_H + 2,
+        label: "Redeploy",
+        variant: "primary",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onExecuteFortify
+      })
+    );
+    this.track(
+      drawGalaxyCommandPad({
+        scene: this.scene,
+        x: REDEPLOY_END_X,
+        y: REDEPLOY_ACTION_Y,
+        width: 74,
+        height: ACTION_BUTTON_H,
+        label: "End",
+        variant: "secondary",
+        depth: COMMAND_NODE_DEPTH,
+        onActivate: callbacks.onEndFortify
+      })
+    );
     this.mapRenderer.drawRouteArrow(origin, destination, 0x7ee4ff);
+  }
+
+  private drawStepperValue(units: number) {
+    const graphics = this.trackObject(this.scene.add.graphics().setDepth(COMMAND_NODE_DEPTH - 2));
+    graphics.fillStyle(0x081723, 0.92);
+    graphics.fillRoundedRect(REDEPLOY_PANEL_CX - STEPPER_VALUE_W / 2, REDEPLOY_STEPPER_Y - STEPPER_VALUE_H / 2, STEPPER_VALUE_W, STEPPER_VALUE_H, 9);
+    graphics.lineStyle(2, 0x7ee4ff, 0.42);
+    graphics.strokeRoundedRect(REDEPLOY_PANEL_CX - STEPPER_VALUE_W / 2, REDEPLOY_STEPPER_Y - STEPPER_VALUE_H / 2, STEPPER_VALUE_W, STEPPER_VALUE_H, 9);
+    this.trackObject(
+      this.scene.add
+        .text(REDEPLOY_PANEL_CX, REDEPLOY_STEPPER_Y, String(units), {
+          color: "#f7fbff",
+          fontFamily: "Inter, sans-serif",
+          fontSize: "18px",
+          fontStyle: "900"
+        })
+        .setOrigin(0.5)
+        .setStroke("#06111e", 2)
+        .setDepth(COMMAND_NODE_DEPTH - 1)
+    );
+  }
+
+  private track(objects: Phaser.GameObjects.GameObject[]) {
+    this.commandObjects.push(...objects);
+  }
+
+  private trackObject<T extends Phaser.GameObjects.GameObject>(object: T) {
+    this.commandObjects.push(object);
+    return object;
+  }
+
+  private clearCommandControls() {
+    for (const object of this.commandObjects) {
+      if (object.active) {
+        object.destroy();
+      }
+    }
+    this.commandObjects = [];
   }
 
   private drawMiniStatus(x: number, y: number, text: string, color: number) {

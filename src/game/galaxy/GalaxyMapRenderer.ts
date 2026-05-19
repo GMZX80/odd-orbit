@@ -8,6 +8,12 @@ import { ownerPalette } from "./ownerPalette";
 type GalaxySnapshot = ReturnType<typeof getGalaxySnapshot>;
 type SystemCue = "none" | "deploy" | "attack-origin" | "attack-target" | "fortify-origin" | "fortify-target";
 
+const STARLANE_COLOR = 0x83a1b5;
+const STARLANE_ALPHA = 0.34;
+const STARLANE_WIDTH = 2.8;
+const STARLANE_GLOW_ALPHA = 0.1;
+const STARLANE_GLOW_WIDTH = 6;
+
 export interface DrawSystemsOptions {
   snapshot: GalaxySnapshot;
   selectedSystemId?: string;
@@ -140,11 +146,15 @@ export class GalaxyMapRenderer {
 
         const isSelectedRoute = this.isSelectedRoute(system.id, neighbour.id, options.selectedSystemId, options.destinationSystemId);
         const isActionLane = this.isActionLane(system.id, neighbour.id, options.activeAction);
-        const color = isActionLane ? 0xffe66f : isSelectedRoute ? 0x66f2a8 : 0x4c6478;
-        const alpha = isActionLane ? 0.92 : isSelectedRoute ? 0.72 : 0.16;
-        const width = isActionLane ? 5 : isSelectedRoute ? 4 : 2.2;
+        const color = isActionLane ? 0xffe66f : isSelectedRoute ? 0x66f2a8 : STARLANE_COLOR;
+        const alpha = isActionLane ? 0.92 : isSelectedRoute ? 0.72 : STARLANE_ALPHA;
+        const width = isActionLane ? 5 : isSelectedRoute ? 4 : STARLANE_WIDTH;
+        if (!isActionLane && !isSelectedRoute) {
+          const glow = this.scene.add.line(0, 0, mapX(system.x), mapY(system.y), mapX(neighbour.x), mapY(neighbour.y), STARLANE_COLOR, STARLANE_GLOW_ALPHA);
+          glow.setOrigin(0, 0).setLineWidth(STARLANE_GLOW_WIDTH).setDepth(0.95);
+        }
         const line = this.scene.add.line(0, 0, mapX(system.x), mapY(system.y), mapX(neighbour.x), mapY(neighbour.y), color, alpha);
-        line.setOrigin(0, 0).setLineWidth(width).setDepth(isActionLane || isSelectedRoute ? 4 : 1);
+        line.setOrigin(0, 0).setLineWidth(width).setDepth(isActionLane || isSelectedRoute ? 4 : 1.1);
 
         if (isActionLane || isSelectedRoute) {
           this.drawRouteMotion(system, neighbour, color, isActionLane ? 5 : 4);

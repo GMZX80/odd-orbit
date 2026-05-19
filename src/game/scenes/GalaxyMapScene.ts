@@ -136,8 +136,9 @@ export class GalaxyMapScene extends Phaser.Scene {
         onAutoResolveMove: () => this.autoResolveMove(),
         onExecuteFortify: () => this.executeSelectedFortify(),
         getFortifyUnits: (originUnits, maxMovable) => this.normalizedFortifyUnits(originUnits, maxMovable),
-        onSetFortifyUnitsFromSlider: (pointerX, sliderX, sliderW, originUnits, maxMovable) => {
-          this.setFortifyUnitsFromSlider(pointerX, sliderX, sliderW, originUnits, maxMovable);
+        onAdjustFortifyUnits: (delta, originUnits, maxMovable) => {
+          const currentUnits = this.normalizedFortifyUnits(originUnits, maxMovable);
+          this.setFortifyUnits(currentUnits + delta, maxMovable);
         }
       }
     });
@@ -374,12 +375,6 @@ export class GalaxyMapScene extends Phaser.Scene {
 
     this.fortifyUnitsToMove = nextUnits;
     this.render();
-  }
-
-  private setFortifyUnitsFromSlider(pointerX: number, sliderX: number, sliderW: number, originUnits: number, maxMovable: number) {
-    const ratio = Phaser.Math.Clamp((pointerX - sliderX) / sliderW, 0, 1);
-    const units = Math.round(1 + ratio * (maxMovable - 1));
-    this.setFortifyUnits(units || this.defaultFortifyUnits(originUnits, maxMovable), maxMovable);
   }
 
   private prepareSelectedAttackAnimation() {

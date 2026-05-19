@@ -1,9 +1,9 @@
 import type { StarSystem } from "../systems/galaxyTypes";
 
-export const mapLeftX = 82;
-export const mapScaleX = 0.78;
-export const mapTopY = 24;
-export const mapScaleY = 0.96;
+export const mapLeftX = 78;
+export const mapScaleX = 0.84;
+export const mapTopY = -52;
+export const mapScaleY = 1.085;
 
 export function mapX(x: number) {
   return mapLeftX + x * mapScaleX;
