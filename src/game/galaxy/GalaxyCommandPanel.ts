@@ -137,7 +137,7 @@ export class GalaxyCommandPanel {
     this.scene.add.rectangle(sliderX + sliderW / 2, sliderY + 15, sliderW, 6, 0x24445b, 0.9).setDepth(72);
     this.scene.add.rectangle(sliderX + (sliderW * ratio) / 2, sliderY + 15, Math.max(4, sliderW * ratio), 6, 0x66f2a8, 0.96).setDepth(73);
     this.scene.add.circle(sliderX + sliderW * ratio, sliderY + 15, 12, 0xf7fbff, 0.98).setStrokeStyle(2, 0x7ee4ff, 0.9).setDepth(74);
-    const sliderHit = this.scene.add.rectangle(sliderX + sliderW / 2, sliderY, sliderW + 16, 34, 0xffffff, 0).setDepth(75);
+    const sliderHit = this.scene.add.rectangle(sliderX + sliderW / 2, sliderY, sliderW + 16, 34, 0xffffff, 0).setDepth(63);
     sliderHit.setInteractive({ useHandCursor: true });
     sliderHit.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
       callbacks.onSetFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
@@ -149,7 +149,7 @@ export class GalaxyCommandPanel {
     });
     drawGalaxyButton(this.scene, 96, 676, 78, 34, "Cancel", callbacks.onCancelDestination, "ghost");
     drawGalaxyButton(this.scene, 190, 676, 94, 34, "Redeploy", callbacks.onExecuteFortify, "primary");
-    drawGalaxyButton(this.scene, 300, 676, 64, 34, "End", callbacks.onEndFortify, "secondary");
+    drawGalaxyButton(this.scene, 306, 676, 58, 34, "End", callbacks.onEndFortify, "secondary");
     this.mapRenderer.drawRouteArrow(origin, destination, 0x7ee4ff);
   }
 

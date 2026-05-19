@@ -16,6 +16,16 @@ import { routeEnemyThemeForFaction, type RouteEnemyTheme } from "../systems/fact
 import type { WormholeRunInput } from "../systems/galaxyTypes";
 import type { RunResult } from "../systems/runTypes";
 import { TRAVEL_COMBAT, TRAVEL_LANES, TRAVEL_LIMITS, TRAVEL_ROAD, TRAVEL_RUN } from "../travel/travelConfig";
+import {
+  applyTravelPerspective,
+  closestPointOnSegment,
+  travelBroodCoreRuptureY,
+  travelDefenceLineY,
+  travelLaneCenterX,
+  travelPointerLane,
+  travelScaleAtY,
+  travelWormholeRestPosition
+} from "../travel/travelGeometry";
 
 interface TravelSceneData {
   idle?: boolean;
@@ -45,12 +55,18 @@ export class TravelScene extends Phaser.Scene {
   private enemyTheme: RouteEnemyTheme = routeEnemyThemeForFaction("neutral");
   private distanceText?: Phaser.GameObjects.Text;
   private spaceScene?: ParallaxSpaceScene;
+  private inputCleanups: Array<() => void> = [];
+  private readonly handleSceneShutdown = () => {
+    this.destroyInput();
+  };
 
   constructor() {
     super("TravelScene");
   }
 
   create(data: TravelSceneData = {}) {
+    this.registerSceneLifecycleCleanup();
+    this.destroyInput();
     this.idle = Boolean(data.idle);
     this.runInput = data.runInput;
     this.enemyTheme = this.resolveRouteEnemyTheme();
@@ -77,7 +93,7 @@ export class TravelScene extends Phaser.Scene {
     this.spaceScene = new ParallaxSpaceScene(this);
     this.wormhole = new Wormhole(this, TRAVEL_LANES.left, this.wormholeRestPosition().y);
     this.positionDormantWormhole();
-    this.player = new PlayerSwarm(this, this.laneCenterX(this.selectedLane, TRAVEL_ROAD.playerY), TRAVEL_ROAD.playerY);
+    this.player = new PlayerSwarm(this, travelLaneCenterX(this.selectedLane, TRAVEL_ROAD.playerY), TRAVEL_ROAD.playerY);
     this.player.setUnits(this.startingUnits);
     this.player.container.setDepth(900);
     this.enemySpawner = new EnemySwarmSpawner(this, { lane: TRAVEL_LANES.center, spawnY: TRAVEL_ROAD.horizonY - 12, theme: this.enemyTheme });
@@ -128,7 +144,7 @@ export class TravelScene extends Phaser.Scene {
     this.enemies.push(...(this.enemySpawner?.update(deltaSeconds, progress, enemySlots) ?? []));
     const broodCore = this.broodCoreSpawner?.update(this.distance, progress, this.broodCores.length);
     if (broodCore && this.broodCores.length < TRAVEL_LIMITS.maxActiveBroodCores) {
-      this.applyPerspective(broodCore.container, broodCore.lane, broodCore.y, broodCore.xOffset);
+      applyTravelPerspective(broodCore.container, broodCore.lane, broodCore.y, broodCore.xOffset);
       this.broodCores.push(broodCore);
     }
 
@@ -159,26 +175,57 @@ export class TravelScene extends Phaser.Scene {
     };
   }
 
+  private registerSceneLifecycleCleanup() {
+    this.events.off(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
+    this.events.off(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.handleSceneShutdown);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.handleSceneShutdown);
+  }
+
   private createInput() {
-    this.input.on("pointermove", (pointer: Phaser.Input.Pointer) => {
+    this.destroyInput();
+
+    const onPointerMove = (pointer: Phaser.Input.Pointer) => {
       if (!pointer.isDown || this.idle) {
         return;
       }
-      this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, TRAVEL_ROAD.playerY), TRAVEL_LANES.left, TRAVEL_LANES.card);
-    });
+      this.selectedLane = Phaser.Math.Clamp(travelPointerLane(pointer.x, TRAVEL_ROAD.playerY), TRAVEL_LANES.left, TRAVEL_LANES.card);
+    };
 
-    this.input.on("pointerdown", (pointer: Phaser.Input.Pointer) => {
+    const onPointerDown = (pointer: Phaser.Input.Pointer) => {
       if (!this.idle) {
-        this.selectedLane = Phaser.Math.Clamp(this.pointerLane(pointer.x, TRAVEL_ROAD.playerY), TRAVEL_LANES.left, TRAVEL_LANES.card);
+        this.selectedLane = Phaser.Math.Clamp(travelPointerLane(pointer.x, TRAVEL_ROAD.playerY), TRAVEL_LANES.left, TRAVEL_LANES.card);
       }
+    };
+
+    const onLeft = () => {
+      this.selectedLane = Phaser.Math.Clamp(this.selectedLane - 1, TRAVEL_LANES.left, TRAVEL_LANES.card);
+    };
+
+    const onRight = () => {
+      this.selectedLane = Phaser.Math.Clamp(this.selectedLane + 1, TRAVEL_LANES.left, TRAVEL_LANES.card);
+    };
+
+    this.input.on("pointermove", onPointerMove);
+    this.input.on("pointerdown", onPointerDown);
+    this.inputCleanups.push(() => {
+      this.input.off("pointermove", onPointerMove);
+      this.input.off("pointerdown", onPointerDown);
     });
 
-    this.input.keyboard?.on("keydown-LEFT", () => {
-      this.selectedLane = Phaser.Math.Clamp(this.selectedLane - 1, TRAVEL_LANES.left, TRAVEL_LANES.card);
+    this.input.keyboard?.on("keydown-LEFT", onLeft);
+    this.input.keyboard?.on("keydown-RIGHT", onRight);
+    this.inputCleanups.push(() => {
+      this.input.keyboard?.off("keydown-LEFT", onLeft);
+      this.input.keyboard?.off("keydown-RIGHT", onRight);
     });
-    this.input.keyboard?.on("keydown-RIGHT", () => {
-      this.selectedLane = Phaser.Math.Clamp(this.selectedLane + 1, TRAVEL_LANES.left, TRAVEL_LANES.card);
-    });
+  }
+
+  private destroyInput() {
+    for (const cleanup of this.inputCleanups) {
+      cleanup();
+    }
+    this.inputCleanups = [];
   }
 
   private animatePlayer(delta: number) {
@@ -186,7 +233,7 @@ export class TravelScene extends Phaser.Scene {
       return;
     }
 
-    const targetX = this.laneCenterX(this.selectedLane, TRAVEL_ROAD.playerY);
+    const targetX = travelLaneCenterX(this.selectedLane, TRAVEL_ROAD.playerY);
     this.player.container.x = Phaser.Math.Linear(this.player.container.x, targetX, Math.min(1, delta / 80));
     this.player.container.y = TRAVEL_ROAD.playerY + Math.sin(this.time.now / 130) * 4;
     this.player.update(this.time.now);
@@ -220,7 +267,7 @@ export class TravelScene extends Phaser.Scene {
       important
     });
     card.container.setData("balance", cardSpec);
-    this.applyPerspective(card.container, TRAVEL_LANES.card, card.y, card.xOffset);
+    applyTravelPerspective(card.container, TRAVEL_LANES.card, card.y, card.xOffset);
     this.cards.push(card);
 
     if (window.localStorage.getItem("odd-orbit:debug-card-balance") === "true") {
@@ -311,7 +358,7 @@ export class TravelScene extends Phaser.Scene {
   private moveCards(deltaSeconds: number) {
     for (const card of this.cards) {
       card.y += 160 * deltaSeconds;
-      this.applyPerspective(card.container, card.lane, card.y, card.xOffset);
+      applyTravelPerspective(card.container, card.lane, card.y, card.xOffset);
     }
 
     this.cards = this.cards.filter((card) => {
@@ -351,7 +398,7 @@ export class TravelScene extends Phaser.Scene {
       }
       enemy.y += speed * deltaSeconds;
       const wobble = Math.sin(this.time.now * 0.001 * enemy.wobbleSpeed + enemy.seed) * enemy.wobbleAmount;
-      this.applyPerspective(enemy.container, enemy.lane, enemy.y, enemy.xOffset + wobble);
+      applyTravelPerspective(enemy.container, enemy.lane, enemy.y, enemy.xOffset + wobble);
     }
 
     const defenceLineY = this.defenceLineY();
@@ -370,7 +417,7 @@ export class TravelScene extends Phaser.Scene {
   }
 
   private moveBroodCores(deltaSeconds: number) {
-    const ruptureY = this.broodCoreRuptureY();
+    const ruptureY = travelBroodCoreRuptureY(this.scale.height || TRAVEL_ROAD.bottomY);
 
     for (const broodCore of this.broodCores) {
       if (broodCore.state === "descending") {
@@ -380,7 +427,7 @@ export class TravelScene extends Phaser.Scene {
       broodCore.update(this.time.now, ruptureY);
       const warningShake = broodCore.state === "ruptureWarning" ? Math.sin(this.time.now * 0.034 + broodCore.seed) * 4 : 0;
       const wobble = Math.sin(this.time.now * 0.001 * broodCore.wobbleSpeed + broodCore.seed) * broodCore.wobbleAmount + warningShake;
-      this.applyPerspective(broodCore.container, broodCore.lane, broodCore.y, broodCore.xOffset + wobble);
+      applyTravelPerspective(broodCore.container, broodCore.lane, broodCore.y, broodCore.xOffset + wobble);
     }
 
     this.broodCores = this.broodCores.filter((broodCore) => {
@@ -411,7 +458,7 @@ export class TravelScene extends Phaser.Scene {
       bullet.container.y += bullet.velocity.y * deltaSeconds;
       bullet.y = bullet.container.y;
       bullet.container.y = bullet.y;
-      bullet.container.setScale(Phaser.Math.Clamp(this.scaleAtY(bullet.y) * 0.82, 0.36, 1));
+      bullet.container.setScale(Phaser.Math.Clamp(travelScaleAtY(bullet.y) * 0.82, 0.36, 1));
     }
 
     this.bullets = this.bullets.filter((bullet) => {
@@ -654,29 +701,6 @@ export class TravelScene extends Phaser.Scene {
     });
   }
 
-  private laneCenterX(lane: number, y: number) {
-    const width = this.roadWidthAtY(y);
-    const left = TRAVEL_ROAD.centerX - width / 2;
-    return left + ((lane + 0.5) / TRAVEL_LANES.count) * width;
-  }
-
-  private roadWidthAtY(y: number) {
-    const progress = Phaser.Math.Clamp((y - TRAVEL_ROAD.horizonY) / (TRAVEL_ROAD.bottomY - TRAVEL_ROAD.horizonY), 0, 1);
-    return Phaser.Math.Linear(TRAVEL_ROAD.topWidth, TRAVEL_ROAD.bottomWidth, progress);
-  }
-
-  private scaleAtY(y: number) {
-    const progress = Phaser.Math.Clamp((y - TRAVEL_ROAD.horizonY) / (TRAVEL_ROAD.bottomY - TRAVEL_ROAD.horizonY), 0, 1);
-    return Phaser.Math.Linear(0.34, 1.18, progress);
-  }
-
-  private applyPerspective(body: Phaser.GameObjects.Container, lane: number, y: number, xOffset = 0) {
-    body.x = this.laneCenterX(lane, y) + xOffset * this.scaleAtY(y);
-    body.y = y;
-    body.setScale(this.scaleAtY(y));
-    body.setDepth(Math.floor(y));
-  }
-
   private bulletVelocityForLane(lane: number, x: number, y: number, aimBiasX: number) {
     if (lane === TRAVEL_LANES.left && this.wormhole?.canBeHit()) {
       const target = this.wormholeRestPosition();
@@ -686,14 +710,14 @@ export class TravelScene extends Phaser.Scene {
     }
 
     const targetY = TRAVEL_ROAD.horizonY - 150 + Phaser.Math.FloatBetween(-26, 18);
-    const targetX = this.laneCenterX(lane, TRAVEL_ROAD.horizonY + 18) + aimBiasX + Phaser.Math.FloatBetween(-TRAVEL_COMBAT.bulletAimSpreadX, TRAVEL_COMBAT.bulletAimSpreadX);
+    const targetX = travelLaneCenterX(lane, TRAVEL_ROAD.horizonY + 18) + aimBiasX + Phaser.Math.FloatBetween(-TRAVEL_COMBAT.bulletAimSpreadX, TRAVEL_COMBAT.bulletAimSpreadX);
     const direction = new Phaser.Math.Vector2(targetX - x, targetY - y).normalize();
 
     return direction.scale(610);
   }
 
   private didBulletSegmentHitEnemy(bullet: Bullet, enemy: EnemySphere | BroodCore) {
-    const closest = this.closestPointOnSegment(
+    const closest = closestPointOnSegment(
       bullet.previousPosition.x,
       bullet.previousPosition.y,
       bullet.container.x,
@@ -714,7 +738,7 @@ export class TravelScene extends Phaser.Scene {
   }
 
   private didBulletSegmentHitWormhole(bullet: Bullet, wormhole: Wormhole) {
-    const closest = this.closestPointOnSegment(
+    const closest = closestPointOnSegment(
       bullet.previousPosition.x,
       bullet.previousPosition.y,
       bullet.container.x,
@@ -766,7 +790,7 @@ export class TravelScene extends Phaser.Scene {
       .filter((enemy) => enemy.container.active && enemy.lane === TRAVEL_LANES.center)
       .filter((enemy) => enemy.y < defenceLineY - 80 && enemy.y > TRAVEL_ROAD.horizonY - 20)
       .map((enemy) => {
-        const laneCenter = this.laneCenterX(TRAVEL_LANES.center, enemy.y);
+        const laneCenter = travelLaneCenterX(TRAVEL_LANES.center, enemy.y);
         return {
           enemy,
           outlierScore: Math.abs(enemy.container.x - laneCenter)
@@ -783,28 +807,8 @@ export class TravelScene extends Phaser.Scene {
     return targetPool[Phaser.Math.Between(0, targetPool.length - 1)].enemy;
   }
 
-  private closestPointOnSegment(ax: number, ay: number, bx: number, by: number, px: number, py: number) {
-    const abx = bx - ax;
-    const aby = by - ay;
-    const abLengthSquared = abx * abx + aby * aby;
-    if (abLengthSquared === 0) {
-      return { x: ax, y: ay };
-    }
-
-    const t = Phaser.Math.Clamp(((px - ax) * abx + (py - ay) * aby) / abLengthSquared, 0, 1);
-    return {
-      x: ax + abx * t,
-      y: ay + aby * t
-    };
-  }
-
   private defenceLineY() {
-    return (this.player?.container.y ?? TRAVEL_ROAD.playerY) - 10;
-  }
-
-  private broodCoreRuptureY() {
-    const height = this.scale.height || TRAVEL_ROAD.bottomY;
-    return Phaser.Math.Clamp(height * 0.32, TRAVEL_ROAD.horizonY + 120, height * 0.42);
+    return travelDefenceLineY(this.player?.container.y ?? TRAVEL_ROAD.playerY);
   }
 
   private ruptureBroodCore(broodCore: BroodCore) {
@@ -830,8 +834,8 @@ export class TravelScene extends Phaser.Scene {
 
     const desiredCount = Phaser.Math.Clamp(Math.round(this.player.units * 0.9), 24, 100);
     const allowedCount = Math.min(desiredCount, Math.max(24, TRAVEL_LIMITS.maxEnemiesAfterBroodRupture - this.enemies.length));
-    const baseScale = this.scaleAtY(y);
-    const baseLaneCenter = this.laneCenterX(TRAVEL_LANES.center, y);
+    const baseScale = travelScaleAtY(y);
+    const baseLaneCenter = travelLaneCenterX(TRAVEL_LANES.center, y);
     const baseXOffset = (x - baseLaneCenter) / Math.max(0.1, baseScale);
     const progress = this.effectiveRunProgress();
 
@@ -851,7 +855,7 @@ export class TravelScene extends Phaser.Scene {
         this.enemyTheme
       );
       enemy.configureBurst(sprayX, sprayY, Phaser.Math.FloatBetween(0.82, 1.18));
-      this.applyPerspective(enemy.container, enemy.lane, enemy.y, enemy.xOffset);
+      applyTravelPerspective(enemy.container, enemy.lane, enemy.y, enemy.xOffset);
       this.enemies.push(enemy);
     }
   }
@@ -871,13 +875,7 @@ export class TravelScene extends Phaser.Scene {
   }
 
   private wormholeRestPosition() {
-    const width = this.scale.width || 390;
-    const height = this.scale.height || 720;
-
-    return new Phaser.Math.Vector2(
-      Phaser.Math.Clamp(width * 0.22, 72, 108),
-      Phaser.Math.Clamp(height * 0.53, 330, 430)
-    );
+    return travelWormholeRestPosition(this.scale.width || 390, this.scale.height || 720);
   }
 
   private moveWormholeTowardPlayer(deltaSeconds: number) {
@@ -1043,11 +1041,5 @@ export class TravelScene extends Phaser.Scene {
       ease: "Cubic.easeOut",
       onComplete: () => lossText.destroy()
     });
-  }
-
-  private pointerLane(x: number, y: number) {
-    const width = this.roadWidthAtY(y);
-    const left = TRAVEL_ROAD.centerX - width / 2;
-    return Math.floor(((x - left) / width) * TRAVEL_LANES.count);
   }
 }
