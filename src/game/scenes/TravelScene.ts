@@ -65,6 +65,7 @@ export class TravelScene extends Phaser.Scene {
   }
 
   create(data: TravelSceneData = {}) {
+    this.resetCamera();
     this.registerSceneLifecycleCleanup();
     this.destroyInput();
     this.idle = Boolean(data.idle);
@@ -697,8 +698,16 @@ export class TravelScene extends Phaser.Scene {
     this.cameras.main.fadeOut(260, 7, 19, 29);
     this.time.delayedCall(280, () => {
       gameEvents.emit("run:end", result);
-      this.scene.pause();
     });
+  }
+
+  private resetCamera() {
+    this.cameras.main.resetFX();
+    this.cameras.main.stopFollow();
+    this.cameras.main.setScroll(0, 0);
+    this.cameras.main.setZoom(1);
+    this.cameras.main.setRotation(0);
+    this.cameras.main.setAlpha(1);
   }
 
   private bulletVelocityForLane(lane: number, x: number, y: number, aimBiasX: number) {

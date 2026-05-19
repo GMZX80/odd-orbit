@@ -63,6 +63,7 @@ export class GalaxyMapScene extends Phaser.Scene {
   }
 
   private resetCamera() {
+    this.cameras.main.resetFX();
     this.cameras.main.stopFollow();
     this.cameras.main.setScroll(0, 0);
     this.cameras.main.setZoom(1);
@@ -91,6 +92,9 @@ export class GalaxyMapScene extends Phaser.Scene {
 
   private shouldRefreshIdleVisuals() {
     if (this.arrivalEffectPlaying || this.strategyAnimationPlaying || this.input.activePointer.isDown) {
+      return false;
+    }
+    if (this.selectedSystemId || this.destinationSystemId) {
       return false;
     }
 

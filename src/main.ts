@@ -34,19 +34,13 @@ const game = new Phaser.Game({
 function startRun(startingUnits = 1, runInput?: WormholeRunInput) {
   ui.showHud();
   game.scene.stop("GalaxyMapScene");
-  const travelScene = game.scene.getScene("TravelScene");
-  if (travelScene.scene.isActive()) {
-    travelScene.scene.restart({ idle: false, startingUnits, runInput });
-    return;
-  }
+  game.scene.stop("TravelScene");
   game.scene.start("TravelScene", { idle: false, startingUnits, runInput });
 }
 
 function showGalaxyMap() {
   ui.showGalaxy();
-  if (game.scene.isActive("TravelScene")) {
-    game.scene.stop("TravelScene");
-  }
+  game.scene.stop("TravelScene");
   game.scene.start("GalaxyMapScene");
 }
 

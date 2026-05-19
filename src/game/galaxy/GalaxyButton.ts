@@ -128,9 +128,13 @@ export function drawGalaxyCommandNode(options: DrawGalaxyCommandNodeOptions) {
   const hitTarget = options.scene.add.circle(options.x, options.y, hitRadius, 0xffffff, 0.001).setDepth(depth + 6);
   hitTarget.setInteractive({ useHandCursor: true });
   hitTarget.on("pointerdown", () => {
+    if (fired) {
+      return;
+    }
     pressed = true;
-    fired = false;
+    fired = true;
     setNodePressed(feedbackObjects, body, outerRing, true, style);
+    options.onActivate();
   });
   hitTarget.on("pointerout", () => setNodePressed(feedbackObjects, body, outerRing, false, style));
   hitTarget.on("pointerover", () => {
@@ -143,15 +147,8 @@ export function drawGalaxyCommandNode(options: DrawGalaxyCommandNodeOptions) {
     setNodePressed(feedbackObjects, body, outerRing, false, style);
   });
   hitTarget.on("pointerup", () => {
-    if (!pressed || fired) {
-      pressed = false;
-      setNodePressed(feedbackObjects, body, outerRing, false, style);
-      return;
-    }
-    fired = true;
     pressed = false;
     setNodePressed(feedbackObjects, body, outerRing, false, style);
-    options.onActivate();
   });
   objects.push(hitTarget);
 
@@ -192,10 +189,14 @@ export function drawGalaxyCommandPad(options: DrawGalaxyCommandPadOptions) {
     .setDepth(depth + 3);
   hitTarget.setInteractive({ useHandCursor: true });
   hitTarget.on("pointerdown", () => {
+    if (fired) {
+      return;
+    }
     pressed = true;
-    fired = false;
+    fired = true;
     label.setScale(0.98);
     drawPadBody(body, options.x, options.y, options.width, options.height, radius, style, enabled, true);
+    options.onActivate();
   });
   hitTarget.on("pointerout", () => {
     label.setScale(1);
@@ -213,17 +214,9 @@ export function drawGalaxyCommandPad(options: DrawGalaxyCommandPadOptions) {
     drawPadBody(body, options.x, options.y, options.width, options.height, radius, style, enabled, false);
   });
   hitTarget.on("pointerup", () => {
-    if (!pressed || fired) {
-      pressed = false;
-      label.setScale(1);
-      drawPadBody(body, options.x, options.y, options.width, options.height, radius, style, enabled, false);
-      return;
-    }
-    fired = true;
     pressed = false;
     label.setScale(1);
     drawPadBody(body, options.x, options.y, options.width, options.height, radius, style, enabled, false);
-    options.onActivate();
   });
   objects.push(hitTarget);
 
