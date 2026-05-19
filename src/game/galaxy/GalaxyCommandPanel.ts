@@ -47,7 +47,7 @@ export class GalaxyCommandPanel {
         this.drawAttackChoice(origin, destination, options.callbacks);
         return;
       }
-      drawGalaxyButton(this.scene, 302, 674, 66, 28, "End", options.callbacks.onEndCommand);
+      drawGalaxyButton(this.scene, 248, 660, 120, 42, "End Turn", options.callbacks.onEndCommand);
       if (origin) {
         drawGalaxyButton(this.scene, 22, 674, 68, 28, "Cancel", options.callbacks.onCancelSelection);
       }
@@ -59,7 +59,7 @@ export class GalaxyCommandPanel {
         this.drawRedeployPanel(origin, destination, options.callbacks);
         return;
       }
-      drawGalaxyButton(this.scene, 306, 674, 62, 28, "End", options.callbacks.onEndFortify);
+      drawGalaxyButton(this.scene, 210, 660, 158, 42, "End Redeploy", options.callbacks.onEndFortify);
       if (origin) {
         drawGalaxyButton(this.scene, 22, 674, 68, 28, "Cancel", options.callbacks.onCancelSelection);
       }
@@ -147,9 +147,9 @@ export class GalaxyCommandPanel {
         callbacks.onSetFortifyUnitsFromSlider(pointer.x, sliderX, sliderW, origin.fleetUnits, maxMovable);
       }
     });
-    drawGalaxyButton(this.scene, 96, 676, 78, 34, "Cancel", callbacks.onCancelDestination, "ghost");
-    drawGalaxyButton(this.scene, 190, 676, 94, 34, "Redeploy", callbacks.onExecuteFortify, "primary");
-    drawGalaxyButton(this.scene, 306, 676, 58, 34, "End", callbacks.onEndFortify, "secondary");
+    drawGalaxyButton(this.scene, 92, 676, 76, 34, "Cancel", callbacks.onCancelDestination, "ghost");
+    drawGalaxyButton(this.scene, 178, 672, 104, 42, "Redeploy", callbacks.onExecuteFortify, "primary");
+    drawGalaxyButton(this.scene, 296, 672, 72, 42, "End", callbacks.onEndFortify, "secondary");
     this.mapRenderer.drawRouteArrow(origin, destination, 0x7ee4ff);
   }
 
