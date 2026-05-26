@@ -61,16 +61,25 @@ export function createDomUi() {
       resultMark.textContent = runResult.status === "complete" ? "Escaped" : "Game Over";
       resultTitle.textContent = runResult.status === "complete" ? "Wormhole Escape" : "Game Over";
       resultCopy.textContent = runResult.message;
-      resultRewards.innerHTML = [
+      resultRewards.replaceChildren(
         reward("Distance", `${runResult.distance}m`),
         reward("Swarm", runResult.finalUnits),
         reward("Stabilised", stabilisedUnits)
-      ].join("");
+      );
       retryButton.textContent = actionLabel;
     }
   };
 }
 
 function reward(label: string, value: string | number) {
-  return `<div class="reward-stat"><span>${label}</span><strong>${value}</strong></div>`;
+  const container = document.createElement("div");
+  const labelElement = document.createElement("span");
+  const valueElement = document.createElement("strong");
+
+  container.className = "reward-stat";
+  labelElement.textContent = label;
+  valueElement.textContent = String(value);
+  container.append(labelElement, valueElement);
+
+  return container;
 }

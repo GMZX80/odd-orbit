@@ -68,37 +68,9 @@ export class TravelScene extends Phaser.Scene {
     this.resetCamera();
     this.registerSceneLifecycleCleanup();
     this.destroyInput();
-    this.idle = Boolean(data.idle);
-    this.runInput = data.runInput;
-    this.enemyTheme = this.resolveRouteEnemyTheme();
-    this.startingUnits = Math.max(1, Math.floor(data.runInput?.startingUnits ?? data.startingUnits ?? 1));
-    this.ending = false;
-    this.escaping = false;
-    this.selectedLane = TRAVEL_LANES.center;
-    this.cardSpawnTimer = this.nextCardSpawnDelay(0);
-    this.nextSidewinderAt = this.time.now + Phaser.Math.Between(2600, 4200);
-    this.distance = 0;
-    this.cards.forEach((card) => card.destroy());
-    this.enemies.forEach((enemy) => enemy.destroy());
-    this.broodCores.forEach((broodCore) => broodCore.destroy());
-    this.bullets.forEach((bullet) => bullet.destroy());
-    this.sidewinders.forEach((missile) => missile.destroy());
-    this.wormhole?.destroy();
-    this.spaceScene?.destroy();
-    this.cards = [];
-    this.enemies = [];
-    this.broodCores = [];
-    this.bullets = [];
-    this.sidewinders = [];
-
-    this.spaceScene = new ParallaxSpaceScene(this);
-    this.wormhole = new Wormhole(this, TRAVEL_LANES.left, this.wormholeRestPosition().y);
-    this.positionDormantWormhole();
-    this.player = new PlayerSwarm(this, travelLaneCenterX(this.selectedLane, TRAVEL_ROAD.playerY), TRAVEL_ROAD.playerY);
-    this.player.setUnits(this.startingUnits);
-    this.player.container.setDepth(900);
-    this.enemySpawner = new EnemySwarmSpawner(this, { lane: TRAVEL_LANES.center, spawnY: TRAVEL_ROAD.horizonY - 12, theme: this.enemyTheme });
-    this.broodCoreSpawner = new BroodCoreSpawner(this, { lane: TRAVEL_LANES.center, spawnY: TRAVEL_ROAD.horizonY - 28, theme: this.enemyTheme });
+    this.resetRunState(data);
+    this.clearRunObjects();
+    this.createRunObjects();
     this.createInput();
 
     this.distanceText = this.add
@@ -114,9 +86,55 @@ export class TravelScene extends Phaser.Scene {
     gameEvents.emit("run:update", this.snapshot());
 
     if (this.idle) {
-      this.player.container.setAlpha(0.72);
+      this.player?.container.setAlpha(0.72);
       this.distanceText.setText("Ready for numbers");
     }
+  }
+
+  private resetRunState(data: TravelSceneData) {
+    this.idle = Boolean(data.idle);
+    this.runInput = data.runInput;
+    this.enemyTheme = this.resolveRouteEnemyTheme();
+    this.startingUnits = Math.max(1, Math.floor(data.runInput?.startingUnits ?? data.startingUnits ?? 1));
+    this.ending = false;
+    this.escaping = false;
+    this.selectedLane = TRAVEL_LANES.center;
+    this.cardSpawnTimer = this.nextCardSpawnDelay(0);
+    this.nextSidewinderAt = this.time.now + Phaser.Math.Between(2600, 4200);
+    this.distance = 0;
+  }
+
+  private clearRunObjects() {
+    this.cards.forEach((card) => card.destroy());
+    this.enemies.forEach((enemy) => enemy.destroy());
+    this.broodCores.forEach((broodCore) => broodCore.destroy());
+    this.bullets.forEach((bullet) => bullet.destroy());
+    this.sidewinders.forEach((missile) => missile.destroy());
+    this.player?.container.destroy();
+    this.wormhole?.destroy();
+    this.spaceScene?.destroy();
+
+    this.cards = [];
+    this.enemies = [];
+    this.broodCores = [];
+    this.bullets = [];
+    this.sidewinders = [];
+    this.player = undefined;
+    this.wormhole = undefined;
+    this.spaceScene = undefined;
+    this.enemySpawner = undefined;
+    this.broodCoreSpawner = undefined;
+  }
+
+  private createRunObjects() {
+    this.spaceScene = new ParallaxSpaceScene(this);
+    this.wormhole = new Wormhole(this, TRAVEL_LANES.left, this.wormholeRestPosition().y);
+    this.positionDormantWormhole();
+    this.player = new PlayerSwarm(this, travelLaneCenterX(this.selectedLane, TRAVEL_ROAD.playerY), TRAVEL_ROAD.playerY);
+    this.player.setUnits(this.startingUnits);
+    this.player.container.setDepth(900);
+    this.enemySpawner = new EnemySwarmSpawner(this, { lane: TRAVEL_LANES.center, spawnY: TRAVEL_ROAD.horizonY - 12, theme: this.enemyTheme });
+    this.broodCoreSpawner = new BroodCoreSpawner(this, { lane: TRAVEL_LANES.center, spawnY: TRAVEL_ROAD.horizonY - 28, theme: this.enemyTheme });
   }
 
   update(_time: number, delta: number) {
