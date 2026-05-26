@@ -6,20 +6,11 @@ Date: 2026-05-26
 
 The travel mini game is tuned around normal lane-switch reaction timing of roughly 350-500 ms.
 
-Wormhole tuning now targets:
-
-- A learning run that mostly stays left can open the wormhole in about 8 seconds.
-- A cautious run that spends about half its time charging can open in about 13 seconds before card growth.
-- A growing swarm with 4 units and half-time charging can open in about 7 seconds.
-- A busy 8-unit run spending about one third of time charging can open in about 9 seconds.
-
-These numbers are estimates from the current fire cadence and wormhole absorption cap. They are deliberately not frame-perfect; they are sanity checks for human-feeling play.
+Wormhole tuning has been restored to the original slower charge values after playtesting showed the first clarity pass made escape too easy.
 
 ## Balancing Decision
 
-The previous wormhole scale made escape take minutes under normal play. That was too slow for the runner loop and made the left lane feel unrewarding even when the player understood it.
-
-The updated target is that the wormhole becomes achievable within a normal run rhythm, but still asks the player to give up time in the fight and growth lanes.
+The target is that the wormhole remains a significant objective. The lane guide should explain the job of the left lane, but it should not make escape automatic.
 
 Runs now start with a 5-unit swarm buffer. The strategic layer can still commit a single seed unit, but the runner needs a little survivability so early breakthroughs or one poor card do not erase the learning loop.
 
