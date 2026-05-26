@@ -5,12 +5,15 @@ import { GalaxyMapScene } from "./game/scenes/GalaxyMapScene";
 import { TravelScene } from "./game/scenes/TravelScene";
 import { createDomUi } from "./game/ui/domUi";
 import { gameEvents } from "./game/events";
+import { installOddOrbitTestHooks } from "./game/testHooks";
 import { applyWormholeRunResult } from "./game/systems/galaxyState";
 import type { WormholeRunInput } from "./game/systems/galaxyTypes";
 import type { RunResult, RunStateSnapshot } from "./game/systems/runTypes";
 
 const ui = createDomUi();
 let pendingRunInput: WormholeRunInput | undefined;
+let latestRunSnapshot: RunStateSnapshot | undefined;
+let lastRunResult: RunResult | undefined;
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -32,6 +35,9 @@ const game = new Phaser.Game({
 });
 
 function startRun(startingUnits = 1, runInput?: WormholeRunInput) {
+  if (runInput) {
+    pendingRunInput = runInput;
+  }
   ui.showHud();
   game.scene.stop("GalaxyMapScene");
   game.scene.stop("TravelScene");
@@ -56,11 +62,11 @@ if (import.meta.env.MODE === "development" && new URLSearchParams(window.locatio
 }
 
 gameEvents.on<WormholeRunInput>("galaxy:start-run", (runInput) => {
-  pendingRunInput = runInput;
   startRun(runInput.startingUnits, runInput);
 });
 
 gameEvents.on("run:update", (snapshot: RunStateSnapshot) => {
+  latestRunSnapshot = snapshot;
   ui.renderHud(snapshot);
 });
 
@@ -69,6 +75,7 @@ gameEvents.on("run:damage", () => {
 });
 
 gameEvents.on("run:end", (result: RunResult) => {
+  lastRunResult = result;
   if (pendingRunInput) {
     const runInput = pendingRunInput;
     pendingRunInput = undefined;
@@ -78,6 +85,14 @@ gameEvents.on("run:end", (result: RunResult) => {
   }
 
   ui.showResult(result, "Fly Again");
+});
+
+installOddOrbitTestHooks({
+  game,
+  startRun,
+  showGalaxyMap,
+  getRunSnapshot: () => latestRunSnapshot,
+  getLastRunResult: () => lastRunResult
 });
 
 window.addEventListener("beforeunload", () => {
