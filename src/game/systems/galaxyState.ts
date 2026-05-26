@@ -35,6 +35,7 @@ let turnLog: TurnLogEntry[] = [];
 let logId = 1;
 let gameOverStatus: "won" | "lost" | undefined;
 let pendingStrategicArrivalEffect: StrategicArrivalEffect | undefined;
+let playerCompletedWormholeRoutes = 0;
 
 export function getGalaxySnapshot() {
   return {
@@ -48,7 +49,8 @@ export function getGalaxySnapshot() {
     fortifyUsed,
     lastResolution,
     turnLog: [...turnLog],
-    gameOverStatus
+    gameOverStatus,
+    playerCompletedWormholeRoutes
   };
 }
 
@@ -212,6 +214,7 @@ export function applyWormholeRunResult(input: WormholeRunInput, result: Wormhole
   }
 
   const strategicArrivals = convertRunnerSpheresToStrategicUnits(survivors);
+  playerCompletedWormholeRoutes += 1;
 
   if (destination.owner === "neutral") {
     destination.owner = "player";
@@ -910,13 +913,16 @@ function checkVictoryState() {
     return;
   }
 
-  if (playerOwned.length >= 5) {
+  if (playerOwned.length >= 5 || playerCompletedWormholeRoutes >= 5) {
     turnPhase = "gameOver";
     currentFaction = "player";
     gameOverStatus = "won";
     lastResolution = {
       title: "Route Secured",
-      detail: "Your faction controls enough linked star systems to call this odd orbit a success."
+      detail:
+        playerOwned.length >= 5
+          ? "Your faction controls enough linked star systems to call this odd orbit a success."
+          : "Your pilots completed enough successful wormhole routes to call this odd orbit a success."
     };
   }
 }
