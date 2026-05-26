@@ -907,6 +907,17 @@ function checkVictoryState() {
       title: "Galaxy Secured",
       detail: "Every known star system now answers to your questionable command."
     };
+    return;
+  }
+
+  if (playerOwned.length >= 5) {
+    turnPhase = "gameOver";
+    currentFaction = "player";
+    gameOverStatus = "won";
+    lastResolution = {
+      title: "Route Secured",
+      detail: "Your faction controls enough linked star systems to call this odd orbit a success."
+    };
   }
 }
 

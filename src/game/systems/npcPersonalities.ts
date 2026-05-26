@@ -23,7 +23,7 @@ export const npcPersonalities: Record<Exclude<FactionId, "player" | "neutral">, 
     riskTolerance: 0.75,
     defensiveBias: 0.25,
     expansionBias: 0.45,
-    playerHostility: 0.75,
+    playerHostility: 0.48,
     resourceGreed: 0.45,
     constellationGreed: 0.35,
     fortressPreference: 0.5,
@@ -31,15 +31,15 @@ export const npcPersonalities: Record<Exclude<FactionId, "player" | "neutral">, 
     opportunism: 0.75,
     caution: 0.2,
     randomness: 0.18,
-    minAttackWinChance: 0.48,
-    preferredAttackWinChance: 0.58
+    minAttackWinChance: 0.58,
+    preferredAttackWinChance: 0.68
   },
   amber: {
     aggression: 0.45,
     riskTolerance: 0.35,
     defensiveBias: 0.45,
     expansionBias: 0.9,
-    playerHostility: 0.35,
+    playerHostility: 0.25,
     resourceGreed: 0.9,
     constellationGreed: 0.75,
     fortressPreference: 0.35,
@@ -47,15 +47,15 @@ export const npcPersonalities: Record<Exclude<FactionId, "player" | "neutral">, 
     opportunism: 0.6,
     caution: 0.55,
     randomness: 0.12,
-    minAttackWinChance: 0.62,
-    preferredAttackWinChance: 0.72
+    minAttackWinChance: 0.68,
+    preferredAttackWinChance: 0.78
   },
   violet: {
     aggression: 0.35,
     riskTolerance: 0.2,
     defensiveBias: 0.9,
     expansionBias: 0.45,
-    playerHostility: 0.45,
+    playerHostility: 0.3,
     resourceGreed: 0.5,
     constellationGreed: 0.65,
     fortressPreference: 0.85,
@@ -63,8 +63,8 @@ export const npcPersonalities: Record<Exclude<FactionId, "player" | "neutral">, 
     opportunism: 0.5,
     caution: 0.85,
     randomness: 0.08,
-    minAttackWinChance: 0.68,
-    preferredAttackWinChance: 0.78
+    minAttackWinChance: 0.72,
+    preferredAttackWinChance: 0.82
   }
 };
 
