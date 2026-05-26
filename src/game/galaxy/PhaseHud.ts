@@ -7,7 +7,7 @@ type PhaseStepState = "complete" | "active" | "upcoming";
 export function drawPhaseHud(scene: Phaser.Scene, snapshot: GalaxySnapshot) {
   scene.add.rectangle(39, 360, 78, 720, 0x03101b, 0.66).setStrokeStyle(1.2, 0x315a77, 0.58).setDepth(45);
   scene.add
-    .text(39, 34, `TURN ${snapshot.turnNumber}`, {
+    .text(39, 34, `T${snapshot.turnNumber}`, {
       color: "#7ee4ff",
       fontFamily: "Inter, sans-serif",
       fontSize: "10px",
@@ -17,10 +17,10 @@ export function drawPhaseHud(scene: Phaser.Scene, snapshot: GalaxySnapshot) {
     .setDepth(51);
 
   scene.add.line(0, 0, 39, 126, 39, 544, 0x5da8ff, 0.32).setOrigin(0, 0).setLineWidth(2).setDepth(46);
-  drawPhaseStep(scene, 1, 39, 118, "Add", "Bonus", phaseStepState(snapshot, 1));
-  drawPhaseStep(scene, 2, 39, 252, "Redeploy", "", phaseStepState(snapshot, 2));
-  drawPhaseStep(scene, 3, 39, 386, "Attack", "", phaseStepState(snapshot, 3));
-  drawPhaseStep(scene, 4, 39, 520, "Enemy", "Moves", phaseStepState(snapshot, 4));
+  drawPhaseStep(scene, 1, 39, 118, phaseStepState(snapshot, 1));
+  drawPhaseStep(scene, 2, 39, 252, phaseStepState(snapshot, 2));
+  drawPhaseStep(scene, 3, 39, 386, phaseStepState(snapshot, 3));
+  drawPhaseStep(scene, 4, 39, 520, phaseStepState(snapshot, 4));
 }
 
 function phaseStepState(snapshot: GalaxySnapshot, step: number): PhaseStepState {
@@ -38,7 +38,7 @@ function phaseStepState(snapshot: GalaxySnapshot, step: number): PhaseStepState 
   }
 }
 
-function drawPhaseStep(scene: Phaser.Scene, step: number, x: number, y: number, line1: string, line2: string, state: PhaseStepState) {
+function drawPhaseStep(scene: Phaser.Scene, step: number, x: number, y: number, state: PhaseStepState) {
   const color = state === "complete" ? 0x66f2a8 : state === "active" ? 0xffd45f : 0x8da2b5;
   const alpha = state === "upcoming" ? 0.42 : 0.92;
   const radius = state === "active" ? 25 : 19;
@@ -52,16 +52,5 @@ function drawPhaseStep(scene: Phaser.Scene, step: number, x: number, y: number, 
       fontStyle: "900"
     })
     .setOrigin(0.5)
-    .setDepth(50);
-  scene.add
-    .text(x, y + radius + 17, line2 ? `${line1}\n${line2}` : line1, {
-      color: state === "active" ? "#ffe66f" : state === "complete" ? "#c7f7dd" : "#9fb7c7",
-      fontFamily: "Inter, sans-serif",
-      fontSize: state === "active" ? "16px" : "9px",
-      fontStyle: "900",
-      align: "center",
-      lineSpacing: 1
-    })
-    .setOrigin(0.5, 0)
     .setDepth(50);
 }

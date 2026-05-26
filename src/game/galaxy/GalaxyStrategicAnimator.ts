@@ -72,21 +72,28 @@ export class GalaxyStrategicAnimator {
     const source = new Phaser.Math.Vector2(mapX(options.origin.x), mapY(options.origin.y));
     const target = new Phaser.Math.Vector2(mapX(options.destination.x), mapY(options.destination.y));
     const angle = Phaser.Math.Angle.Between(source.x, source.y, target.x, target.y);
-    const midX = Phaser.Math.Clamp((source.x + target.x) / 2, 96, 316);
-    const midY = Phaser.Math.Clamp((source.y + target.y) / 2 - 28, 96, 604);
     const overlay = this.scene.add.container(0, 0).setDepth(126);
 
     const routeGlow = this.scene.add.line(0, 0, source.x, source.y, target.x, target.y, color, 0.42).setOrigin(0, 0).setLineWidth(10);
     const routeCore = this.scene.add.line(0, 0, source.x, source.y, target.x, target.y, 0xf7fbff, 0.86).setOrigin(0, 0).setLineWidth(2.4);
     const originRing = this.scene.add.circle(source.x, source.y, 24, color, 0.12).setStrokeStyle(4, color, 0.92);
     const targetRing = this.scene.add.circle(target.x, target.y, 26, color, 0.16).setStrokeStyle(5, accent, 0.96);
-    const badge = this.createRouteBadge(midX, midY, color);
-    overlay.add([routeGlow, routeCore, originRing, targetRing, badge]);
+    const routeCue = this.scene.add.triangle(source.x, source.y, 0, -8, 24, 0, 0, 8, color, 0.95).setRotation(angle);
+    const routeCueCore = this.scene.add.triangle(source.x, source.y, 0, -4, 14, 0, 0, 4, 0xf7fbff, 0.9).setRotation(angle);
+    overlay.add([routeGlow, routeCore, originRing, targetRing, routeCue, routeCueCore]);
 
     this.scene.tweens.add({ targets: routeGlow, alpha: 0.72, yoyo: true, repeat: 3, duration: 180, ease: "Sine.easeInOut" });
     this.scene.tweens.add({ targets: originRing, alpha: 0, scale: 1.9, duration: 920, ease: "Quad.easeOut" });
     this.scene.tweens.add({ targets: targetRing, alpha: 0.02, scale: 2.2, duration: 1180, ease: "Quad.easeOut" });
-    this.scene.tweens.add({ targets: badge, alpha: 1, y: midY - 6, duration: 220, ease: "Back.easeOut" });
+    this.scene.tweens.add({
+      targets: [routeCue, routeCueCore],
+      x: target.x,
+      y: target.y,
+      alpha: 0,
+      scale: 1.36,
+      duration: 940,
+      ease: "Cubic.easeInOut"
+    });
 
     for (let index = 0; index < 5; index += 1) {
       const t = 0.12 + index * 0.16;
@@ -369,21 +376,6 @@ export class GalaxyStrategicAnimator {
         onComplete: () => pulse.destroy()
       });
     }
-  }
-
-  private createRouteBadge(x: number, y: number, color: number) {
-    const badge = this.scene.add.container(x, y + 10).setAlpha(0);
-    const background = this.scene.add.rectangle(0, 0, 96, 28, 0x07131d, 0.86).setStrokeStyle(2, color, 0.78);
-    const label = this.scene.add
-      .text(0, 0, "NPC MOVE", {
-        color: "#f7fbff",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "10px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5);
-    badge.add([background, label]);
-    return badge;
   }
 
   private pointOnAttackPath(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, t: number) {

@@ -11,43 +11,19 @@ interface TravelLaneGuideUpdate {
 }
 
 const laneRoles = [
-  { label: "CHARGE", color: 0x65ffcb, accent: 0x8ddcff },
-  { label: "FIGHT", color: 0xff6d75, accent: 0xffb066 },
-  { label: "GROW", color: 0x7ee4ff, accent: 0xffe66f }
+  { color: 0x65ffcb, accent: 0x8ddcff },
+  { color: 0xff6d75, accent: 0xffb066 },
+  { color: 0x7ee4ff, accent: 0xffe66f }
 ] as const;
 
 export class TravelLaneGuide {
   private readonly graphics: Phaser.GameObjects.Graphics;
-  private readonly labels: Phaser.GameObjects.Text[];
-  private readonly cueText: Phaser.GameObjects.Text;
   private impactPulse = 0;
   private selectionPulse = 0;
   private previousSelectedLane: number = TRAVEL_LANES.center;
 
   constructor(scene: Phaser.Scene) {
     this.graphics = scene.add.graphics().setDepth(45);
-    this.labels = laneRoles.map((role, lane) =>
-      scene.add
-        .text(this.labelX(lane), TRAVEL_ROAD.playerY + 46, role.label, {
-          color: `#${role.accent.toString(16).padStart(6, "0")}`,
-          fontFamily: "Inter, sans-serif",
-          fontSize: "11px",
-          fontStyle: "900"
-        })
-        .setOrigin(0.5)
-        .setStroke("#06111e", 4)
-        .setDepth(100)
-    );
-    this.cueText = scene.add
-      .text(82, TRAVEL_ROAD.playerY - 108, "Charge the wormhole", {
-        color: "#b3fff3",
-        fontFamily: "Inter, sans-serif",
-        fontSize: "13px",
-        fontStyle: "900"
-      })
-      .setOrigin(0.5)
-      .setStroke("#06111e", 5)
-      .setDepth(930);
   }
 
   update(options: TravelLaneGuideUpdate, deltaSeconds: number) {
@@ -64,8 +40,8 @@ export class TravelLaneGuide {
     this.drawWormholeConduit(options);
     this.drawCenterTargeting(options);
     this.drawCardLaneMotifs(options);
-    this.updateLabels(options);
-    this.updateCue(options);
+    this.drawLaneRoleIcons(options);
+    this.drawWormholeCue(options);
   }
 
   pulseWormholeImpact() {
@@ -74,10 +50,6 @@ export class TravelLaneGuide {
 
   destroy() {
     this.graphics.destroy();
-    for (const label of this.labels) {
-      label.destroy();
-    }
-    this.cueText.destroy();
   }
 
   private drawLaneBands(options: TravelLaneGuideUpdate) {
@@ -165,26 +137,70 @@ export class TravelLaneGuide {
     }
   }
 
-  private updateLabels(options: TravelLaneGuideUpdate) {
-    for (let lane = 0; lane < this.labels.length; lane += 1) {
-      const label = this.labels[lane];
-      const selected = options.selectedLane === lane;
-      label.setPosition(this.labelX(lane), TRAVEL_ROAD.playerY + 46);
-      label.setAlpha(selected ? 0.96 : 0.48);
-      label.setScale(selected ? 1 + this.selectionPulse * 0.08 : 1);
-    }
+  private drawLaneRoleIcons(options: TravelLaneGuideUpdate) {
+    const iconY = TRAVEL_ROAD.playerY + 48;
+    this.drawWormholeIcon(this.labelX(TRAVEL_LANES.left), iconY, options);
+    this.drawCrosshairIcon(this.labelX(TRAVEL_LANES.center), iconY, options);
+    this.drawCardsIcon(this.labelX(TRAVEL_LANES.card), iconY, options);
   }
 
-  private updateCue(options: TravelLaneGuideUpdate) {
+  private drawWormholeCue(options: TravelLaneGuideUpdate) {
     const cueWindow = Phaser.Math.Clamp(1 - Math.max(0, options.elapsedMs - 1800) / 3600, 0, 1);
     const chargeNeed = Phaser.Math.Clamp(1 - options.chargeProgress * 1.7, 0, 1);
     const alpha = cueWindow * chargeNeed;
+    if (alpha <= 0) {
+      return;
+    }
 
-    this.cueText.setAlpha(alpha);
-    this.cueText.setPosition(82, TRAVEL_ROAD.playerY - 108);
+    const wormholeX = travelLaneCenterX(TRAVEL_LANES.left, 360);
+    const shipLaneX = travelLaneCenterX(TRAVEL_LANES.left, TRAVEL_ROAD.playerY);
+    const pulse = 0.5 + Math.sin(options.timeMs * 0.012) * 0.5;
+    const arrowY = TRAVEL_ROAD.playerY - 96 + pulse * 16;
+
+    this.graphics.lineStyle(3, 0xb3fff3, alpha * 0.72);
+    this.graphics.lineBetween(shipLaneX, arrowY + 28, Phaser.Math.Linear(shipLaneX, wormholeX, 0.5), 496);
+    this.graphics.lineBetween(Phaser.Math.Linear(shipLaneX, wormholeX, 0.5), 496, wormholeX, 386);
+    this.graphics.fillStyle(0xb3fff3, alpha * 0.92);
+    this.graphics.fillTriangle(shipLaneX, arrowY, shipLaneX - 10, arrowY + 20, shipLaneX + 10, arrowY + 20);
   }
 
   private labelX(lane: number) {
     return Phaser.Math.Clamp(travelLaneCenterX(lane, TRAVEL_ROAD.playerY + 34), 54, 336);
+  }
+
+  private drawWormholeIcon(x: number, y: number, options: TravelLaneGuideUpdate) {
+    const selected = options.selectedLane === TRAVEL_LANES.left;
+    const alpha = selected ? 0.88 : 0.48;
+    const pulse = selected ? this.selectionPulse * 5 : 0;
+
+    this.graphics.lineStyle(2.2, 0x65ffcb, alpha);
+    this.graphics.strokeCircle(x, y, 13 + pulse);
+    this.graphics.lineStyle(1.4, 0x8ddcff, alpha * 0.75);
+    this.graphics.strokeCircle(x, y, 7 + pulse * 0.4);
+  }
+
+  private drawCrosshairIcon(x: number, y: number, options: TravelLaneGuideUpdate) {
+    const selected = options.selectedLane === TRAVEL_LANES.center;
+    const alpha = selected ? 0.88 : 0.48;
+    const radius = 12 + (selected ? this.selectionPulse * 5 : 0);
+
+    this.graphics.lineStyle(2, 0xff6d75, alpha);
+    this.graphics.strokeCircle(x, y, radius);
+    this.graphics.lineStyle(1.8, 0xffb066, alpha * 0.82);
+    this.graphics.lineBetween(x - 19, y, x - 7, y);
+    this.graphics.lineBetween(x + 7, y, x + 19, y);
+    this.graphics.lineBetween(x, y - 19, x, y - 7);
+    this.graphics.lineBetween(x, y + 7, x, y + 19);
+  }
+
+  private drawCardsIcon(x: number, y: number, options: TravelLaneGuideUpdate) {
+    const selected = options.selectedLane === TRAVEL_LANES.card;
+    const alpha = selected ? 0.88 : 0.48;
+    const lift = selected ? this.selectionPulse * 4 : 0;
+
+    for (let index = 0; index < 3; index += 1) {
+      this.graphics.lineStyle(1.8, index % 2 === 0 ? 0x7ee4ff : 0xffe66f, alpha - index * 0.1);
+      this.graphics.strokeRoundedRect(x - 14 + index * 5, y - 11 - index * 3 - lift, 23, 17, 4);
+    }
   }
 }
