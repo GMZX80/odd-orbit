@@ -68,20 +68,70 @@ export class GalaxyStrategicAnimator {
 
   animateRouteTransfer(options: RouteTransferAnimationOptions) {
     const color = ownerPalette[options.faction].fill;
-    for (let index = 0; index < 7; index += 1) {
-      const dot = this.scene.add.circle(mapX(options.origin.x), mapY(options.origin.y), 3.8, color, 0.9).setDepth(120);
+    const accent = ownerPalette[options.faction].stroke;
+    const source = new Phaser.Math.Vector2(mapX(options.origin.x), mapY(options.origin.y));
+    const target = new Phaser.Math.Vector2(mapX(options.destination.x), mapY(options.destination.y));
+    const angle = Phaser.Math.Angle.Between(source.x, source.y, target.x, target.y);
+    const midX = Phaser.Math.Clamp((source.x + target.x) / 2, 96, 316);
+    const midY = Phaser.Math.Clamp((source.y + target.y) / 2 - 28, 96, 604);
+    const overlay = this.scene.add.container(0, 0).setDepth(126);
+
+    const routeGlow = this.scene.add.line(0, 0, source.x, source.y, target.x, target.y, color, 0.42).setOrigin(0, 0).setLineWidth(10);
+    const routeCore = this.scene.add.line(0, 0, source.x, source.y, target.x, target.y, 0xf7fbff, 0.86).setOrigin(0, 0).setLineWidth(2.4);
+    const originRing = this.scene.add.circle(source.x, source.y, 24, color, 0.12).setStrokeStyle(4, color, 0.92);
+    const targetRing = this.scene.add.circle(target.x, target.y, 26, color, 0.16).setStrokeStyle(5, accent, 0.96);
+    const badge = this.createRouteBadge(midX, midY, color);
+    overlay.add([routeGlow, routeCore, originRing, targetRing, badge]);
+
+    this.scene.tweens.add({ targets: routeGlow, alpha: 0.72, yoyo: true, repeat: 3, duration: 180, ease: "Sine.easeInOut" });
+    this.scene.tweens.add({ targets: originRing, alpha: 0, scale: 1.9, duration: 920, ease: "Quad.easeOut" });
+    this.scene.tweens.add({ targets: targetRing, alpha: 0.02, scale: 2.2, duration: 1180, ease: "Quad.easeOut" });
+    this.scene.tweens.add({ targets: badge, alpha: 1, y: midY - 6, duration: 220, ease: "Back.easeOut" });
+
+    for (let index = 0; index < 5; index += 1) {
+      const t = 0.12 + index * 0.16;
+      const point = this.pointOnAttackPath(source, target, t);
+      const marker = this.scene.add.triangle(point.x, point.y, 0, -5, 17, 0, 0, 5, index % 2 === 0 ? color : 0xf7fbff, 0.92).setRotation(angle);
+      overlay.add(marker);
+      this.scene.tweens.add({
+        targets: marker,
+        x: target.x,
+        y: target.y,
+        alpha: 0,
+        scale: 1.25,
+        delay: index * 85,
+        duration: 720,
+        ease: "Cubic.easeInOut",
+        onComplete: () => marker.destroy()
+      });
+    }
+
+    for (let index = 0; index < 13; index += 1) {
+      const dot = this.scene.add.circle(source.x, source.y, index % 3 === 0 ? 5 : 3.4, index % 4 === 0 ? 0xf7fbff : color, 0.94);
+      overlay.add(dot);
       this.scene.tweens.add({
         targets: dot,
-        x: mapX(options.destination.x),
-        y: mapY(options.destination.y),
-        alpha: 0.2,
-        delay: index * 70,
-        duration: 560,
+        x: target.x,
+        y: target.y,
+        alpha: 0.08,
+        delay: index * 58,
+        duration: 680,
         ease: "Cubic.easeInOut",
         onComplete: () => dot.destroy()
       });
     }
-    this.scene.time.delayedCall(980, options.onComplete);
+
+    this.scene.time.delayedCall(1240, () => {
+      this.scene.tweens.add({
+        targets: overlay,
+        alpha: 0,
+        duration: 220,
+        onComplete: () => {
+          overlay.destroy(true);
+          options.onComplete();
+        }
+      });
+    });
   }
 
   pulseSystem(options: PulseSystemOptions) {
@@ -319,6 +369,21 @@ export class GalaxyStrategicAnimator {
         onComplete: () => pulse.destroy()
       });
     }
+  }
+
+  private createRouteBadge(x: number, y: number, color: number) {
+    const badge = this.scene.add.container(x, y + 10).setAlpha(0);
+    const background = this.scene.add.rectangle(0, 0, 96, 28, 0x07131d, 0.86).setStrokeStyle(2, color, 0.78);
+    const label = this.scene.add
+      .text(0, 0, "NPC MOVE", {
+        color: "#f7fbff",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "10px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5);
+    badge.add([background, label]);
+    return badge;
   }
 
   private pointOnAttackPath(source: Phaser.Math.Vector2, target: Phaser.Math.Vector2, t: number) {

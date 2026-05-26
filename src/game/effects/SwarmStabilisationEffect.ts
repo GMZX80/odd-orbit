@@ -34,10 +34,6 @@ export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOp
   const densityScale = Phaser.Math.Clamp(streamSourceCount / (isAutoBattle ? 90 : 600), 0.45, isAutoBattle ? 1.55 : 1.9);
   const visibleArrivalSpheres = isAutoBattle ? Math.min(streamSourceCount, successfulArrival ? 120 : 24) : Math.min(rawRunnerSpheres, successfulArrival ? 180 : 18);
   const visibleSettledUnits = Math.min(effect.destinationUnitsAfter, 34);
-  const camera = scene.cameras.main;
-  const startZoom = camera.zoom;
-
-  focusCamera(scene, originPoint, destinationPoint, startZoom);
 
   const routePulse = scene.add.line(0, 0, origin.x, origin.y, destination.x, destination.y, playerBlue, 0.2);
   routePulse.setOrigin(0, 0).setLineWidth(4 + densityScale * 1.8);
@@ -67,14 +63,12 @@ export function playSwarmStabilisationEffect(options: SwarmStabilisationEffectOp
   });
 
   const totalDuration = successfulArrival ? 4800 : 1900;
-  finishEffect(scene, overlay, camera, startZoom, totalDuration, onComplete);
+  finishEffect(scene, overlay, totalDuration, onComplete);
 }
 
 function finishEffect(
   scene: Phaser.Scene,
   overlay: Phaser.GameObjects.Container,
-  camera: Phaser.Cameras.Scene2D.Camera,
-  startZoom: number,
   totalDuration: number,
   onComplete?: () => void
 ) {
@@ -89,8 +83,6 @@ function finishEffect(
   };
 
   scene.time.delayedCall(totalDuration, () => {
-    camera.pan(195, 360, 360, "Sine.easeInOut");
-    camera.zoomTo(startZoom, 360, "Sine.easeInOut");
     scene.tweens.add({
       targets: overlay,
       alpha: 0,
@@ -139,14 +131,6 @@ function createResultBadge(scene: Phaser.Scene, overlay: Phaser.GameObjects.Cont
   badge.setAlpha(0);
   overlay.add(badge);
   scene.tweens.add({ targets: badge, alpha: 1, scale: 1, duration: 260, ease: "Back.easeOut" });
-}
-
-function focusCamera(scene: Phaser.Scene, originPoint: Phaser.Math.Vector2, destinationPoint: Phaser.Math.Vector2, startZoom: number) {
-  const camera = scene.cameras.main;
-  const focusX = Phaser.Math.Clamp((originPoint.x + destinationPoint.x) / 2, 96, 294);
-  const focusY = Phaser.Math.Clamp((originPoint.y + destinationPoint.y) / 2, 150, 468);
-  camera.pan(focusX, focusY, 760, "Sine.easeInOut");
-  camera.zoomTo(Math.max(startZoom, 1.14), 760, "Sine.easeInOut");
 }
 
 function createSectorOverlay(
