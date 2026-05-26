@@ -8,7 +8,7 @@ Odd Orbit is currently focused on a small playable number-card runner slice.
 - Mobile-first runner view with two meaningful channels
 - Centre channel: ongoing enemy sphere stream
 - Right channel: number cards
-- Player starts each run with `1` unit
+- Player starts each run with a small 5-unit swarm buffer
 - Numbered cards spawn on the right side
 - Automatic forward shooting
 - Centre shots destroy enemy spheres

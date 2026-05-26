@@ -21,10 +21,11 @@ export class EnemySwarmSpawner {
     this.lane = options.lane;
     this.spawnY = options.spawnY;
     this.theme = options.theme ?? routeEnemyThemeForFaction("crimson");
+    this.reset();
   }
 
   reset() {
-    this.timer = 0;
+    this.timer = 1.4;
     this.bandIndex = 0;
   }
 
@@ -35,7 +36,7 @@ export class EnemySwarmSpawner {
     while (this.timer <= 0 && enemies.length < availableSlots) {
       const band = this.spawnBand(progress, availableSlots - enemies.length);
       enemies.push(...band);
-      this.timer += Phaser.Math.FloatBetween(0.55 - progress * 0.22, 0.88 - progress * 0.34);
+      this.timer += Phaser.Math.FloatBetween(0.8 - progress * 0.34, 1.18 - progress * 0.46);
     }
 
     return enemies;
@@ -43,8 +44,8 @@ export class EnemySwarmSpawner {
 
   private spawnBand(progress: number, availableSlots: number) {
     const enemies: EnemySphere[] = [];
-    const rowCount = Phaser.Math.Between(2, progress > 0.55 ? 4 : 3);
-    const baseColumns = Math.round(Phaser.Math.Linear(4, 7, progress));
+    const rowCount = progress < 0.24 ? 1 : Phaser.Math.Between(2, progress > 0.55 ? 4 : 3);
+    const baseColumns = Math.round(Phaser.Math.Linear(2, 7, progress));
     const spacingX = Phaser.Math.Linear(18, 14, progress);
     const spacingY = Phaser.Math.Linear(16, 12, progress);
     const baseSpeed = Phaser.Math.FloatBetween(34, 48) + progress * 38;

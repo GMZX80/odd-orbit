@@ -16,6 +16,7 @@ import { routeEnemyThemeForFaction, type RouteEnemyTheme } from "../systems/fact
 import type { WormholeRunInput } from "../systems/galaxyTypes";
 import type { RunResult } from "../systems/runTypes";
 import { TRAVEL_COMBAT, TRAVEL_LANES, TRAVEL_LIMITS, TRAVEL_ROAD, TRAVEL_RUN } from "../travel/travelConfig";
+import { TravelLaneGuide } from "../travel/TravelLaneGuide";
 import {
   applyTravelPerspective,
   closestPointOnSegment,
@@ -55,6 +56,7 @@ export class TravelScene extends Phaser.Scene {
   private enemyTheme: RouteEnemyTheme = routeEnemyThemeForFaction("neutral");
   private distanceText?: Phaser.GameObjects.Text;
   private spaceScene?: ParallaxSpaceScene;
+  private laneGuide?: TravelLaneGuide;
   private inputCleanups: Array<() => void> = [];
   private readonly handleSceneShutdown = () => {
     this.destroyInput();
@@ -81,7 +83,8 @@ export class TravelScene extends Phaser.Scene {
         fontStyle: "800"
       })
       .setOrigin(0.5)
-      .setDepth(950);
+      .setDepth(950)
+      .setAlpha(0);
 
     gameEvents.emit("run:update", this.snapshot());
 
@@ -95,7 +98,7 @@ export class TravelScene extends Phaser.Scene {
     this.idle = Boolean(data.idle);
     this.runInput = data.runInput;
     this.enemyTheme = this.resolveRouteEnemyTheme();
-    this.startingUnits = Math.max(1, Math.floor(data.runInput?.startingUnits ?? data.startingUnits ?? 1));
+    this.startingUnits = Math.max(5, Math.floor(data.runInput?.startingUnits ?? data.startingUnits ?? 5));
     this.ending = false;
     this.escaping = false;
     this.selectedLane = TRAVEL_LANES.center;
@@ -111,6 +114,7 @@ export class TravelScene extends Phaser.Scene {
     this.bullets.forEach((bullet) => bullet.destroy());
     this.sidewinders.forEach((missile) => missile.destroy());
     this.player?.container.destroy();
+    this.laneGuide?.destroy();
     this.wormhole?.destroy();
     this.spaceScene?.destroy();
 
@@ -120,6 +124,7 @@ export class TravelScene extends Phaser.Scene {
     this.bullets = [];
     this.sidewinders = [];
     this.player = undefined;
+    this.laneGuide = undefined;
     this.wormhole = undefined;
     this.spaceScene = undefined;
     this.enemySpawner = undefined;
@@ -128,6 +133,7 @@ export class TravelScene extends Phaser.Scene {
 
   private createRunObjects() {
     this.spaceScene = new ParallaxSpaceScene(this);
+    this.laneGuide = new TravelLaneGuide(this);
     this.wormhole = new Wormhole(this, TRAVEL_LANES.left, this.wormholeRestPosition().y);
     this.positionDormantWormhole();
     this.player = new PlayerSwarm(this, travelLaneCenterX(this.selectedLane, TRAVEL_ROAD.playerY), TRAVEL_ROAD.playerY);
@@ -140,6 +146,7 @@ export class TravelScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     const deltaSeconds = delta / 1000;
     this.spaceScene?.update(deltaSeconds);
+    this.updateLaneGuide(deltaSeconds);
 
     if (this.escaping) {
       this.wormhole?.update(this.time.now, deltaSeconds);
@@ -182,7 +189,6 @@ export class TravelScene extends Phaser.Scene {
     this.checkCardCollisions();
 
     gameEvents.emit("run:update", this.snapshot());
-    this.distanceText?.setText(`${Math.floor(this.distance)}m`);
   }
 
   private resolveRouteEnemyTheme() {
@@ -406,6 +412,22 @@ export class TravelScene extends Phaser.Scene {
     }
   }
 
+  private updateLaneGuide(deltaSeconds: number) {
+    this.laneGuide?.update(
+      {
+        selectedLane: this.selectedLane,
+        chargeProgress: this.wormhole?.chargeProgressRatio() ?? 0,
+        elapsedMs: this.time.now,
+        timeMs: this.time.now,
+        wormholeOpen:
+          this.wormhole?.state === "open" ||
+          this.wormhole?.state === "descending" ||
+          this.wormhole?.state === "teleporting"
+      },
+      deltaSeconds
+    );
+  }
+
   private moveEnemies(deltaSeconds: number) {
     for (const enemy of this.enemies) {
       let speed = enemy.speed;
@@ -558,6 +580,7 @@ export class TravelScene extends Phaser.Scene {
         const impactX = this.wormhole.container.x + direction.x * this.wormhole.hitRadius * this.wormhole.container.scaleX * 0.42;
         const impactY = this.wormhole.container.y + direction.y * this.wormhole.hitRadius * this.wormhole.container.scaleY * 0.42;
         this.wormhole.hit(this.time.now, this.player?.units ?? 1);
+        this.laneGuide?.pulseWormholeImpact();
         bullet.impact(impactX, impactY, this.time.now);
         this.createImpactFlash(impactX, impactY, 0x9effff);
         hitSomething = true;
@@ -673,7 +696,8 @@ export class TravelScene extends Phaser.Scene {
         continue;
       }
 
-      this.player.setUnits(this.player.units + card.value);
+      const nextUnits = this.player.units + card.value;
+      this.player.setUnits(this.distance < TRAVEL_RUN.distanceGoal ? Math.max(1, nextUnits) : nextUnits);
       card.destroy();
       this.cameras.main.shake(80, 0.004);
 
@@ -932,7 +956,7 @@ export class TravelScene extends Phaser.Scene {
     this.escaping = true;
     this.wormhole?.startTeleporting();
     this.fadeActiveRunObjects();
-    this.distanceText?.setText("Wormhole escape");
+    this.distanceText?.setText("Wormhole escape").setAlpha(1);
     playWarpEffect({
       scene: this,
       playerContainer: this.player.container,

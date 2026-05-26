@@ -51,6 +51,10 @@ ui.onRetry(() => {
 
 ui.showGalaxy();
 
+if (import.meta.env.MODE === "development" && new URLSearchParams(window.location.search).get("travel") === "1") {
+  window.setTimeout(() => startRun(1), 1000);
+}
+
 gameEvents.on<WormholeRunInput>("galaxy:start-run", (runInput) => {
   pendingRunInput = runInput;
   startRun(runInput.startingUnits, runInput);

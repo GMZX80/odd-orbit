@@ -110,12 +110,20 @@ export function generateBalancedCard(params: SingleCardParams): BalancedCard {
   const progress = progressFor(params.distanceTravelled, params.targetRunDistance);
   const roll = params.random();
 
+  if (progress < 0.25) {
+    return roll < 0.58 ? createPositiveCard(params) : createEarlyTrainingCard(params);
+  }
+
   if (roll < positiveChance(progress)) {
     return createPositiveCard(params);
   }
 
   const difficulty = roll < positiveChance(progress) + 0.36 && progress < 0.55 ? "repairable" : chooseDifficulty(progress, params.random);
   const card = createNegativeCard(params, difficulty);
+
+  if (progress < 0.62 && params.playerUnits + card.value <= 0) {
+    return createEarlyTrainingCard(params);
+  }
 
   if (params.playerUnits + card.estimatedValueAtCollision <= 0) {
     return progress < 0.35 ? createPositiveCard(params) : createNegativeCard(params, "repairable");
@@ -126,6 +134,18 @@ export function generateBalancedCard(params: SingleCardParams): BalancedCard {
   }
 
   return card;
+}
+
+function createEarlyTrainingCard(params: SingleCardParams): BalancedCard {
+  const expectedHits = estimateExpectedHitsBeforeCollision(params);
+  const value = params.playerUnits <= 1 ? 1 : -1;
+
+  return {
+    value,
+    difficulty: "repairable",
+    expectedHits,
+    estimatedValueAtCollision: value + expectedHits
+  };
 }
 
 function createNegativeCard(params: SingleCardParams, difficulty: CardDifficulty): BalancedCard {

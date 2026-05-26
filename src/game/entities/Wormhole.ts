@@ -3,10 +3,10 @@ import { wormholeAbsorptionCapForUnits } from "../systems/firepower";
 
 export type WormholeState = "dormant" | "charging" | "unstable" | "open" | "descending" | "teleporting";
 
-const maxWormholeEnergy = 420;
-const energyPerHit = 0.12;
-const energyDecayPerSecond = 18;
-const decayDelayAfterHitMs = 600;
+const maxWormholeEnergy = 42;
+const energyPerHit = 3.2;
+const energyDecayPerSecond = 3.8;
+const decayDelayAfterHitMs = 1200;
 const openingDurationMs = 720;
 const maxWormholeIdleParticles = 20;
 const maxIdleFlickers = 5;
@@ -123,6 +123,10 @@ export class Wormhole {
 
   canBeHit() {
     return this.state === "dormant" || this.state === "charging" || this.state === "unstable";
+  }
+
+  chargeProgressRatio() {
+    return this.chargeProgress();
   }
 
   hit(timeMs: number, playerUnits = 1) {
