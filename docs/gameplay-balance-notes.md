@@ -31,6 +31,12 @@ The wormhole has 42 maximum energy and each bullet hit can contribute up to 0.6 
 
 That keeps the early route possible while stopping 600-1000 unit swarms from charging the route almost instantly. At the cap, a perfect uninterrupted charge takes roughly 14 seconds before decay and movement pressure; in real play it should usually take longer. Lower per-hit energy also makes the blue wormhole progress ring creep forward in smaller, clearer steps.
 
+## Wormhole Collapse Timer
+
+Travel runs have a 38 second collapse timer shown as a red countdown ring inside the wormhole. The timer is intentionally visual rather than numeric: blue still means route energy, red means route stability. If the red ring disappears before the blue charge ring opens the wormhole, the route collapses and the sector incursion fails.
+
+The timer should pressure players who over-focus on centre enemies or right-lane cards, but it should not force twitch-perfect lane changes. If normal play regularly fails by timer rather than by enemy pressure, increase the timer before changing wormhole charge rates.
+
 ## Manual Test Pattern
 
 Use these rough lane timings when playtesting:

@@ -48,6 +48,7 @@ export class TravelScene extends Phaser.Scene {
   private cardSpawnTimer = 1.1;
   private nextSidewinderAt = 0;
   private distance = 0;
+  private runStartedAtMs = 0;
   private idle = true;
   private ending = false;
   private escaping = false;
@@ -105,6 +106,7 @@ export class TravelScene extends Phaser.Scene {
     this.cardSpawnTimer = this.nextCardSpawnDelay(0);
     this.nextSidewinderAt = this.time.now + Phaser.Math.Between(2600, 4200);
     this.distance = 0;
+    this.runStartedAtMs = this.time.now;
   }
 
   private clearRunObjects() {
@@ -155,6 +157,11 @@ export class TravelScene extends Phaser.Scene {
 
     if (!this.player || this.idle || this.ending) {
       this.animatePlayer(delta);
+      return;
+    }
+
+    if (this.hasRunTimerExpired()) {
+      this.collapseUnopenedWormhole();
       return;
     }
 
@@ -400,6 +407,7 @@ export class TravelScene extends Phaser.Scene {
       return;
     }
 
+    this.wormhole.setTimerProgressRatio(this.timeRemainingRatio());
     this.wormhole.update(this.time.now, deltaSeconds);
 
     if (this.wormhole.state === "descending") {
@@ -718,7 +726,31 @@ export class TravelScene extends Phaser.Scene {
     };
   }
 
-  private finishRun(status: RunResult["status"]) {
+  private timeRemainingRatio() {
+    if (this.idle || this.ending || this.escaping) {
+      return 1;
+    }
+
+    const elapsedMs = Math.max(0, this.time.now - this.runStartedAtMs);
+    return Phaser.Math.Clamp(1 - elapsedMs / TRAVEL_RUN.timeLimitMs, 0, 1);
+  }
+
+  private hasRunTimerExpired() {
+    if (this.escaping || this.wormhole?.state === "open" || this.wormhole?.state === "descending" || this.wormhole?.state === "teleporting") {
+      return false;
+    }
+
+    return this.timeRemainingRatio() <= 0;
+  }
+
+  private collapseUnopenedWormhole() {
+    this.wormhole?.setTimerProgressRatio(0);
+    this.wormhole?.update(this.time.now, 0);
+    this.cameras.main.shake(220, 0.008);
+    this.finishRun("game-over", "timer-expired");
+  }
+
+  private finishRun(status: RunResult["status"], failureReason = "runner-failed") {
     if (this.ending || !this.player) {
       return;
     }
@@ -732,15 +764,23 @@ export class TravelScene extends Phaser.Scene {
       startingUnits: this.startingUnits,
       finalUnits: Math.max(0, this.player.units),
       distanceTravelled: Math.floor(this.distance),
-      failureReason: status === "complete" ? undefined : "runner-failed",
+      failureReason: status === "complete" ? undefined : failureReason,
       runInput: this.runInput,
-      message: status === "complete" ? "Escaped through the wormhole!" : "Game over.",
+      message: status === "complete" ? "Escaped through the wormhole!" : this.failureMessage(failureReason),
       completedAt: new Date().toISOString()
     };
     this.cameras.main.fadeOut(260, 7, 19, 29);
     this.time.delayedCall(280, () => {
       gameEvents.emit("run:end", result);
     });
+  }
+
+  private failureMessage(failureReason: string) {
+    if (failureReason === "timer-expired") {
+      return "The wormhole collapsed before escape.";
+    }
+
+    return "Game over.";
   }
 
   private resetCamera() {

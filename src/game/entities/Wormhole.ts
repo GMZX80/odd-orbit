@@ -62,6 +62,7 @@ export class Wormhole {
   private readonly backSwirl: Phaser.GameObjects.Graphics;
   private readonly swirl: Phaser.GameObjects.Graphics;
   private readonly tunnelRings: Phaser.GameObjects.Graphics;
+  private readonly timerRing: Phaser.GameObjects.Graphics;
   private readonly progressRing: Phaser.GameObjects.Graphics;
   private readonly idleParticles: WormholeParticle[];
   private readonly flickers: WormholeFlicker[];
@@ -72,6 +73,7 @@ export class Wormhole {
   private particleSpawnTimerMs = 80;
   private flickerTimerMs = 900;
   private visualChargeProgress = 0;
+  private timerProgressRatio = 1;
 
   constructor(scene: Phaser.Scene, lane: number, y: number) {
     this.scene = scene;
@@ -83,6 +85,7 @@ export class Wormhole {
     this.tunnelRings = scene.add.graphics();
     this.backSwirl = scene.add.graphics();
     this.swirl = scene.add.graphics();
+    this.timerRing = scene.add.graphics();
     this.ring = scene.add.circle(0, 0, 37, 0x171032, 0.16);
     this.core = scene.add.circle(0, 0, 18, 0x050817, 0.72);
     this.shield = scene.add.circle(0, 0, 49, 0x000000, 0);
@@ -99,6 +102,7 @@ export class Wormhole {
       this.swirl,
       this.ring,
       this.core,
+      this.timerRing,
       this.shield,
       this.progressRing,
       ...this.flickers.map((flicker) => flicker.body),
@@ -128,6 +132,10 @@ export class Wormhole {
 
   chargeProgressRatio() {
     return this.chargeProgress();
+  }
+
+  setTimerProgressRatio(progressRatio: number) {
+    this.timerProgressRatio = Phaser.Math.Clamp(progressRatio, 0, 1);
   }
 
   hit(timeMs: number, playerUnits = 1) {
@@ -226,6 +234,7 @@ export class Wormhole {
     this.drawOuterDistortion(palette, displayedProgress, pulse, timeMs);
     this.drawTunnelCue(palette, displayedProgress, pulse, timeMs);
     this.drawSwirl(palette, displayedProgress, pulse);
+    this.drawTimerCountdown(displayedProgress, pulse);
     this.drawProgress(palette, displayedProgress);
     this.updateIdleParticles(deltaSeconds, displayedProgress);
     this.updateFlickers(deltaSeconds, displayedProgress, palette);
@@ -301,6 +310,37 @@ export class Wormhole {
     this.progressRing.beginPath();
     this.progressRing.arc(0, 0, 47, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * progress, false);
     this.progressRing.strokePath();
+  }
+
+  private drawTimerCountdown(chargeProgress: number, pulse: number) {
+    this.timerRing.clear();
+
+    if (this.state === "open" || this.state === "descending" || this.state === "teleporting") {
+      return;
+    }
+
+    const remaining = this.timerProgressRatio;
+    if (remaining <= 0) {
+      return;
+    }
+
+    const urgency = 1 - remaining;
+    const alpha = Phaser.Math.Linear(0.46, 0.96, urgency);
+    const radius = Phaser.Math.Linear(25, 20, chargeProgress) + pulse * Phaser.Math.Linear(0.3, 1.4, urgency);
+    const start = -Math.PI / 2;
+    const end = start + Math.PI * 2 * remaining;
+
+    this.timerRing.fillStyle(0x5b0713, 0.08 + urgency * 0.12);
+    this.timerRing.fillCircle(0, 0, radius - 5);
+    this.timerRing.lineStyle(3.4 + urgency * 1.6, 0xff314d, alpha);
+    this.timerRing.beginPath();
+    this.timerRing.arc(0, 0, radius, start, end, false);
+    this.timerRing.strokePath();
+
+    if (remaining < 0.3) {
+      this.timerRing.lineStyle(1.6, 0xffa3ad, (0.3 - remaining) * 2.2);
+      this.timerRing.strokeCircle(0, 0, radius + 6 + pulse * 4);
+    }
   }
 
   private drawOuterDistortion(palette: { glow: number; core: number; ring: number; accent: number }, progress: number, pulse: number, timeMs: number) {

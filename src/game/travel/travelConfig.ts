@@ -19,7 +19,8 @@ export const TRAVEL_COMBAT = {
 } as const;
 
 export const TRAVEL_RUN = {
-  distanceGoal: 1500
+  distanceGoal: 1500,
+  timeLimitMs: 38000
 } as const;
 
 export const TRAVEL_ROAD = {

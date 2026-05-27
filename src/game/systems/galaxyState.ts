@@ -524,7 +524,7 @@ export function endPlayerTurn() {
   npcFactionIndex = 0;
   deploymentUnitsRemaining = 0;
   lastResolution = {
-    title: "NPC Turns",
+    title: "Rival Moves",
     detail: `${getFactionName(currentFaction)} is calculating something unpleasant.`
   };
   return true;
@@ -534,8 +534,8 @@ export function executeNextNpcTurn(): { action: GalaxyAction; completedRound: bo
   if (turnPhase !== "npcTurn") {
     return {
       action: {
-        title: "No NPC Turn",
-        detail: "NPC factions are not active right now.",
+        title: "No Rival Move",
+        detail: "Rival factions are not active right now.",
         faction: currentFaction
       },
       completedRound: false
