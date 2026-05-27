@@ -6,7 +6,7 @@ Date: 2026-05-26
 
 The travel mini game is tuned around normal lane-switch reaction timing of roughly 350-500 ms.
 
-Wormhole tuning has been restored to the original slower charge values after playtesting showed the first clarity pass made escape too easy.
+Wormhole tuning has been slowed again after manual play showed large swarms could still open the route too quickly.
 
 ## Balancing Decision
 
@@ -22,6 +22,14 @@ Number cards can reduce the swarm, but they are non-lethal before the route reac
 - If escape feels automatic after collecting a few cards, reduce the absorption cap slightly before increasing decay.
 - If players die while trying to learn, soften early enemy pressure before making positive cards more common.
 - If players camp left and win without caring about cards, increase centre-lane pressure in the mid run.
+
+## Wormhole Charge Equation
+
+The wormhole has 18 maximum energy and each bullet hit can contribute up to 6 energy, but the real limiter is the per-second absorption cap:
+
+`3 + sqrt(playerUnits) * 0.09 + min(playerUnits, 120) * 0.006`, clamped between `3.5` and `6.2` energy per second.
+
+That keeps small swarms viable while stopping 600-1000 unit swarms from charging the route almost instantly. At the cap, a perfect uninterrupted charge takes roughly 2.9 seconds before decay and movement pressure; in real play it should usually take longer.
 
 ## Manual Test Pattern
 
