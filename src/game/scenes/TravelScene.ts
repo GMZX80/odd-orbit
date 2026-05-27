@@ -52,6 +52,7 @@ export class TravelScene extends Phaser.Scene {
   private idle = true;
   private ending = false;
   private escaping = false;
+  private collapsing = false;
   private startingUnits = 1;
   private runInput?: WormholeRunInput;
   private enemyTheme: RouteEnemyTheme = routeEnemyThemeForFaction("neutral");
@@ -107,6 +108,7 @@ export class TravelScene extends Phaser.Scene {
     this.nextSidewinderAt = this.time.now + Phaser.Math.Between(2600, 4200);
     this.distance = 0;
     this.runStartedAtMs = this.time.now;
+    this.collapsing = false;
   }
 
   private clearRunObjects() {
@@ -152,6 +154,12 @@ export class TravelScene extends Phaser.Scene {
 
     if (this.escaping) {
       this.wormhole?.update(this.time.now, deltaSeconds);
+      return;
+    }
+
+    if (this.collapsing) {
+      this.wormhole?.update(this.time.now, deltaSeconds);
+      this.animatePlayer(delta);
       return;
     }
 
@@ -744,10 +752,29 @@ export class TravelScene extends Phaser.Scene {
   }
 
   private collapseUnopenedWormhole() {
-    this.wormhole?.setTimerProgressRatio(0);
-    this.wormhole?.update(this.time.now, 0);
+    if (!this.wormhole || this.collapsing) {
+      return;
+    }
+
+    this.collapsing = true;
+    this.wormhole.setTimerProgressRatio(0);
+    this.wormhole.update(this.time.now, 0);
     this.cameras.main.shake(220, 0.008);
-    this.finishRun("game-over", "timer-expired");
+    this.fadeActiveRunObjects();
+    this.tweens.killTweensOf(this.wormhole.container);
+    this.tweens.add({
+      targets: this.wormhole.container,
+      y: -90,
+      scaleX: 0.08,
+      scaleY: 0.08,
+      alpha: 0,
+      angle: this.wormhole.container.angle + 190,
+      duration: 1100,
+      ease: "Cubic.easeIn"
+    });
+    this.time.delayedCall(1180, () => {
+      this.finishRun("game-over", "timer-expired");
+    });
   }
 
   private finishRun(status: RunResult["status"], failureReason = "runner-failed") {

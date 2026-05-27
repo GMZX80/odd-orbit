@@ -33,7 +33,7 @@ That keeps the early route possible while stopping 600-1000 unit swarms from cha
 
 ## Wormhole Collapse Timer
 
-Travel runs have a 38 second collapse timer shown as a red countdown ring inside the wormhole. The timer is intentionally visual rather than numeric: blue still means route energy, red means route stability. If the red ring disappears before the blue charge ring opens the wormhole, the route collapses and the sector incursion fails.
+Travel runs have a 38 second collapse timer shown as a red countdown ring inside the wormhole. The timer is intentionally visual rather than numeric: blue still means route energy, red means route stability. If the red ring disappears before the blue charge ring opens the wormhole, the wormhole shrinks away and the sector incursion fails.
 
 The timer should pressure players who over-focus on centre enemies or right-lane cards, but it should not force twitch-perfect lane changes. If normal play regularly fails by timer rather than by enemy pressure, increase the timer before changing wormhole charge rates.
 

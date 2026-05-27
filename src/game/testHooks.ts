@@ -15,6 +15,7 @@ import {
 } from "./systems/galaxyState";
 import type { RunResult, RunStateSnapshot } from "./systems/runTypes";
 import type { WormholeRunInput } from "./systems/galaxyTypes";
+import { TRAVEL_RUN } from "./travel/travelConfig";
 
 type SceneName = "galaxy" | "travel" | "unknown";
 
@@ -54,6 +55,7 @@ declare global {
       skipCommand: () => OddOrbitTestActionResult;
       executeNpcRound: () => OddOrbitTestActionResult;
       setTravelLane: (lane: number) => OddOrbitTestActionResult;
+      expireTravelTimer: () => OddOrbitTestActionResult;
       showGalaxy: () => OddOrbitTestActionResult;
     };
   }
@@ -121,6 +123,14 @@ export function installOddOrbitTestHooks(options: OddOrbitTestHookOptions) {
       const scene = options.game.scene.getScene("TravelScene") as unknown as { selectedLane?: number };
       scene.selectedLane = Math.max(0, Math.min(2, Math.round(lane)));
       return { ok: true, message: `travel-lane:${scene.selectedLane}`, state: state() };
+    },
+    expireTravelTimer: () => {
+      const scene = options.game.scene.getScene("TravelScene") as unknown as { runStartedAtMs?: number; time?: { now: number } };
+      if (!scene.time) {
+        return finish(false, "travel-timer-unavailable");
+      }
+      scene.runStartedAtMs = scene.time.now - TRAVEL_RUN.timeLimitMs - 1;
+      return { ok: true, message: "travel-timer-expired", state: state() };
     },
     showGalaxy: () => {
       options.showGalaxyMap();

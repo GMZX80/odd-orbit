@@ -333,9 +333,14 @@ export class Wormhole {
     this.timerRing.fillStyle(0x5b0713, 0.08 + urgency * 0.12);
     this.timerRing.fillCircle(0, 0, radius - 5);
     this.timerRing.lineStyle(3.4 + urgency * 1.6, 0xff314d, alpha);
-    this.timerRing.beginPath();
-    this.timerRing.arc(0, 0, radius, start, end, false);
-    this.timerRing.strokePath();
+
+    if (remaining >= 0.995) {
+      this.timerRing.strokeCircle(0, 0, radius);
+    } else {
+      this.timerRing.beginPath();
+      this.timerRing.arc(0, 0, radius, start, end, false);
+      this.timerRing.strokePath();
+    }
 
     if (remaining < 0.3) {
       this.timerRing.lineStyle(1.6, 0xffa3ad, (0.3 - remaining) * 2.2);
