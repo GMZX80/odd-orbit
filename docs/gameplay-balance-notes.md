@@ -25,11 +25,11 @@ Number cards can reduce the swarm, but they are non-lethal before the route reac
 
 ## Wormhole Charge Equation
 
-The wormhole has 18 maximum energy and each bullet hit can contribute up to 6 energy, but the real limiter is the per-second absorption cap:
+The wormhole has 30 maximum energy and each bullet hit can contribute up to 1.2 energy, with a per-second absorption cap:
 
-`3 + sqrt(playerUnits) * 0.09 + min(playerUnits, 120) * 0.006`, clamped between `3.5` and `6.2` energy per second.
+`2.2 + sqrt(playerUnits) * 0.04 + min(playerUnits, 120) * 0.004`, clamped between `2.4` and `4.2` energy per second.
 
-That keeps small swarms viable while stopping 600-1000 unit swarms from charging the route almost instantly. At the cap, a perfect uninterrupted charge takes roughly 2.9 seconds before decay and movement pressure; in real play it should usually take longer.
+That keeps the early route possible while stopping 600-1000 unit swarms from charging the route almost instantly. At the cap, a perfect uninterrupted charge takes roughly 7.1 seconds before decay and movement pressure; in real play it should usually take longer. Lower per-hit energy also makes the blue wormhole progress ring fill in smaller, clearer steps.
 
 ## Manual Test Pattern
 

@@ -3,9 +3,9 @@ import { wormholeAbsorptionCapForUnits } from "../systems/firepower";
 
 export type WormholeState = "dormant" | "charging" | "unstable" | "open" | "descending" | "teleporting";
 
-const maxWormholeEnergy = 18;
-const energyPerHit = 6;
-const energyDecayPerSecond = 0.6;
+const maxWormholeEnergy = 30;
+const energyPerHit = 1.2;
+const energyDecayPerSecond = 0.75;
 const decayDelayAfterHitMs = 600;
 const openingDurationMs = 720;
 const maxWormholeIdleParticles = 20;
@@ -71,6 +71,7 @@ export class Wormhole {
   private energyWindowStartedAtMs = 0;
   private particleSpawnTimerMs = 80;
   private flickerTimerMs = 900;
+  private visualChargeProgress = 0;
 
   constructor(scene: Phaser.Scene, lane: number, y: number) {
     this.scene = scene;
@@ -197,7 +198,9 @@ export class Wormhole {
   private updateVisuals(timeMs: number, deltaSeconds: number) {
     const palette = stateColors[this.state];
     const progress = this.chargeProgress();
-    const openPower = this.state === "open" || this.state === "descending" || this.state === "teleporting" ? 1 : progress;
+    this.visualChargeProgress = Phaser.Math.Linear(this.visualChargeProgress, progress, Phaser.Math.Clamp(deltaSeconds * 7, 0, 1));
+    const displayedProgress = this.state === "teleporting" ? 1 : this.visualChargeProgress;
+    const openPower = this.state === "open" || this.state === "descending" || this.state === "teleporting" ? 1 : displayedProgress;
     const pulseSpeed = Phaser.Math.Linear(0.0028, 0.0085, openPower);
     const pulse = 0.5 + Math.sin(timeMs * pulseSpeed) * 0.5;
     const pulseAmount = Phaser.Math.Linear(0.05, 0.2, openPower);
@@ -205,23 +208,27 @@ export class Wormhole {
     const backSpin = Phaser.Math.Linear(0.16, 1.1, openPower) * deltaSeconds;
     const distortionSpin = Phaser.Math.Linear(0.08, 0.42, openPower) * deltaSeconds;
 
-    this.drawIrregularAura(palette, progress, pulse, timeMs);
+    this.drawIrregularAura(palette, displayedProgress, pulse, timeMs);
     this.ring.setFillStyle(palette.core, 0.12 + openPower * 0.12);
     this.ring.setStrokeStyle(1.2 + openPower * 1.6, palette.ring, 0.18 + openPower * 0.34);
     this.core.setFillStyle(palette.core, 0.48 + openPower * 0.28);
     this.core.setScale(0.82 + openPower * 0.42 + pulse * pulseAmount);
-    this.shield.setStrokeStyle(this.state === "dormant" ? 2 : 1, palette.accent, this.state === "open" ? 0 : Phaser.Math.Linear(0.16, 0.36, progress));
+    this.shield.setStrokeStyle(
+      this.state === "dormant" ? 2 : 1,
+      palette.accent,
+      this.state === "open" ? 0 : Phaser.Math.Linear(0.16, 0.36, displayedProgress)
+    );
     this.outerDistortion.rotation += distortionSpin;
     this.tunnelRings.rotation -= distortionSpin * 0.6;
     this.backSwirl.rotation -= backSpin;
     this.swirl.rotation += frontSpin;
 
-    this.drawOuterDistortion(palette, progress, pulse, timeMs);
-    this.drawTunnelCue(palette, progress, pulse, timeMs);
-    this.drawSwirl(palette, progress, pulse);
-    this.drawProgress(palette, progress);
-    this.updateIdleParticles(deltaSeconds, progress);
-    this.updateFlickers(deltaSeconds, progress, palette);
+    this.drawOuterDistortion(palette, displayedProgress, pulse, timeMs);
+    this.drawTunnelCue(palette, displayedProgress, pulse, timeMs);
+    this.drawSwirl(palette, displayedProgress, pulse);
+    this.drawProgress(palette, displayedProgress);
+    this.updateIdleParticles(deltaSeconds, displayedProgress);
+    this.updateFlickers(deltaSeconds, displayedProgress, palette);
   }
 
   private drawIrregularAura(
