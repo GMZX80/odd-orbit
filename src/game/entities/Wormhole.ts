@@ -3,9 +3,9 @@ import { wormholeAbsorptionCapForUnits } from "../systems/firepower";
 
 export type WormholeState = "dormant" | "charging" | "unstable" | "open" | "descending" | "teleporting";
 
-const maxWormholeEnergy = 30;
-const energyPerHit = 1.2;
-const energyDecayPerSecond = 0.75;
+const maxWormholeEnergy = 42;
+const energyPerHit = 0.6;
+const energyDecayPerSecond = 0.9;
 const decayDelayAfterHitMs = 600;
 const openingDurationMs = 720;
 const maxWormholeIdleParticles = 20;

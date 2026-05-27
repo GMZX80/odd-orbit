@@ -22,9 +22,9 @@ export function averageFireIntervalSecondsForUnits(playerUnits: number) {
 
 export function wormholeAbsorptionCapForUnits(playerUnits: number) {
   const units = Math.max(1, playerUnits);
-  const cap = 2.2 + Math.sqrt(units) * 0.04 + Math.min(units, 120) * 0.004;
+  const cap = 1.6 + Math.sqrt(units) * 0.025 + Math.min(units, 120) * 0.0025;
 
-  return clamp(cap, 2.4, 4.2);
+  return clamp(cap, 1.8, 3);
 }
 
 function clamp(value: number, min: number, max: number) {
