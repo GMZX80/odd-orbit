@@ -1,20 +1,19 @@
 import Phaser from "phaser";
 import "./styles.css";
 import { BootScene } from "./game/scenes/BootScene";
+import { GalaxyMapScene } from "./game/scenes/GalaxyMapScene";
 import { TravelScene } from "./game/scenes/TravelScene";
-import { createGameDataService } from "./game/services/gameDataService";
-import { createLocalStorageAdapter } from "./game/services/localStorageAdapter";
-import { createMockAuthService } from "./game/services/authService";
-import { createUserDataService } from "./game/services/userDataService";
 import { createDomUi } from "./game/ui/domUi";
 import { gameEvents } from "./game/events";
+import { installOddOrbitTestHooks } from "./game/testHooks";
+import { applyWormholeRunResult } from "./game/systems/galaxyState";
+import type { WormholeRunInput } from "./game/systems/galaxyTypes";
 import type { RunResult, RunStateSnapshot } from "./game/systems/runTypes";
 
-const storage = createLocalStorageAdapter("odd-orbit");
-const authService = createMockAuthService();
-const userDataService = createUserDataService(storage);
-const gameDataService = createGameDataService(storage);
 const ui = createDomUi();
+let pendingRunInput: WormholeRunInput | undefined;
+let latestRunSnapshot: RunStateSnapshot | undefined;
+let lastRunResult: RunResult | undefined;
 
 const game = new Phaser.Game({
   type: Phaser.AUTO,
@@ -32,44 +31,72 @@ const game = new Phaser.Game({
       debug: false
     }
   },
-  scene: [BootScene, TravelScene]
+  scene: [BootScene, GalaxyMapScene, TravelScene]
 });
 
-async function refreshProfile() {
-  const player = await authService.getCurrentUser();
-  const profile = await userDataService.getProfile(player.id);
-  ui.renderProfile(profile);
-}
-
-function startRun() {
+function startRun(startingUnits = 1, runInput?: WormholeRunInput) {
+  if (runInput) {
+    pendingRunInput = runInput;
+  }
   ui.showHud();
+  game.scene.stop("GalaxyMapScene");
   game.scene.stop("TravelScene");
-  game.scene.start("TravelScene", {
-    destination: "Cheese Minor",
-    seed: Date.now()
-  });
+  game.scene.start("TravelScene", { idle: false, startingUnits, runInput });
 }
 
-ui.onStart(startRun);
-ui.onRetry(startRun);
+function showGalaxyMap() {
+  ui.showGalaxy();
+  game.scene.stop("TravelScene");
+  game.scene.start("GalaxyMapScene");
+}
+
+ui.onStart(showGalaxyMap);
+ui.onRetry(() => {
+  startRun();
+});
+
+ui.showGalaxy();
+
+if (
+  (import.meta.env.MODE === "development" || new URLSearchParams(window.location.search).get("testHooks") === "1") &&
+  new URLSearchParams(window.location.search).get("travel") === "1"
+) {
+  window.setTimeout(() => startRun(1), 1000);
+}
+
+gameEvents.on<WormholeRunInput>("galaxy:start-run", (runInput) => {
+  startRun(runInput.startingUnits, runInput);
+});
 
 gameEvents.on("run:update", (snapshot: RunStateSnapshot) => {
+  latestRunSnapshot = snapshot;
   ui.renderHud(snapshot);
 });
 
-gameEvents.on("run:event", (message: string) => {
-  ui.flashEvent(message);
+gameEvents.on("run:damage", () => {
+  ui.flashUnitDamage();
 });
 
-gameEvents.on("run:end", async (result: RunResult) => {
-  const player = await authService.getCurrentUser();
-  await userDataService.applyRunResult(player.id, result);
-  await gameDataService.recordRun(player.id, result);
-  ui.showResult(result);
-  await refreshProfile();
+gameEvents.on("run:end", (result: RunResult) => {
+  lastRunResult = result;
+  if (pendingRunInput) {
+    const runInput = pendingRunInput;
+    pendingRunInput = undefined;
+    applyWormholeRunResult(runInput, result);
+    window.setTimeout(showGalaxyMap, 0);
+    return;
+  }
+
+  ui.showResult(result, "Fly Again");
 });
 
-refreshProfile();
+installOddOrbitTestHooks({
+  game,
+  startRun,
+  showGalaxyMap,
+  getRunSnapshot: () => latestRunSnapshot,
+  getLastRunResult: () => lastRunResult
+});
 
 window.addEventListener("beforeunload", () => {
   game.destroy(true);

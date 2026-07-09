@@ -190,11 +190,44 @@ p {
 
 .hud-meters {
   gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .hud-meters span {
   flex: 1;
+  min-width: 104px;
   white-space: nowrap;
+}
+
+#hud-units {
+  display: inline-block;
+}
+
+.hud-units-hit {
+  animation: unit-hit 280ms ease-out;
+}
+
+@keyframes unit-hit {
+  0% {
+    color: #ff6d75;
+    text-shadow: 0 0 14px rgba(255, 109, 117, 0.95);
+    transform: translateX(0) scale(1);
+  }
+
+  35% {
+    transform: translateX(-3px) scale(1.12);
+  }
+
+  70% {
+    transform: translateX(3px) scale(1.04);
+  }
+
+  100% {
+    color: #f7fbff;
+    text-shadow: none;
+    transform: translateX(0) scale(1);
+  }
 }
 
 .hud-event {
@@ -203,6 +236,7 @@ p {
   color: #ffe66f;
   opacity: 0;
   transition: opacity 160ms ease;
+  text-transform: uppercase;
 }
 
 .hud-event-visible {

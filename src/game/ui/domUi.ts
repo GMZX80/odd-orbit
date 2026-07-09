@@ -1,5 +1,5 @@
-import type { PlayerProfile } from "../services/userDataService";
 import type { RunResult, RunStateSnapshot } from "../systems/runTypes";
+import { convertRunnerSpheresToStrategicUnits } from "../systems/runnerStrategicConversion";
 
 function getElement<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -15,18 +15,16 @@ export function createDomUi() {
   const result = getElement<HTMLElement>("result-screen");
   const startButton = getElement<HTMLButtonElement>("start-run");
   const retryButton = getElement<HTMLButtonElement>("retry-run");
-  const profileStrip = getElement<HTMLElement>("profile-strip");
-  const destination = getElement<HTMLElement>("hud-destination");
+  const units = getElement<HTMLElement>("hud-units");
   const distance = getElement<HTMLElement>("hud-distance");
-  const coins = getElement<HTMLElement>("hud-coins");
-  const fuel = getElement<HTMLElement>("hud-fuel");
-  const health = getElement<HTMLElement>("hud-health");
-  const eventText = getElement<HTMLElement>("hud-event");
+  const lane = getElement<HTMLElement>("hud-lane");
+  const route = getElement<HTMLElement>("hud-route");
+  const stability = getElement<HTMLElement>("hud-stability");
+  const objective = getElement<HTMLElement>("hud-objective");
   const resultMark = getElement<HTMLElement>("result-mark");
   const resultTitle = getElement<HTMLElement>("result-title");
   const resultCopy = getElement<HTMLElement>("result-copy");
   const resultRewards = getElement<HTMLElement>("result-rewards");
-  let eventTimer = 0;
 
   return {
     onStart(handler: () => void) {
@@ -37,12 +35,10 @@ export function createDomUi() {
       retryButton.addEventListener("click", handler);
     },
 
-    renderProfile(profile: PlayerProfile) {
-      profileStrip.innerHTML = [
-        stat("Coins", profile.coins),
-        stat("Runs", profile.totalRuns),
-        stat("Artefacts", profile.artefacts.length)
-      ].join("");
+    showGalaxy() {
+      menu.classList.remove("screen-visible");
+      result.classList.remove("screen-visible");
+      hud.classList.remove("hud-visible");
     },
 
     showHud() {
@@ -52,42 +48,46 @@ export function createDomUi() {
     },
 
     renderHud(snapshot: RunStateSnapshot) {
-      destination.textContent = snapshot.destination;
-      distance.textContent = `${Math.floor((snapshot.distance / snapshot.distanceGoal) * 100)}%`;
-      coins.textContent = `${snapshot.coins} coins`;
-      fuel.textContent = `Fuel ${snapshot.fuel}`;
-      health.textContent = `Hull ${snapshot.hull}`;
-      hud.dataset.cursed = String(snapshot.cursed);
+      units.textContent = `Units: ${snapshot.units}`;
+      distance.textContent = `Distance: ${snapshot.distance}m`;
+      lane.textContent = `Lane: ${snapshot.selectedLaneName}`;
+      route.textContent = `Route: ${snapshot.routeChargePercent}%`;
+      stability.textContent = `Stable: ${snapshot.stabilityPercent}%`;
+      objective.textContent = snapshot.objective;
     },
 
-    flashEvent(message: string) {
-      window.clearTimeout(eventTimer);
-      eventText.textContent = message;
-      eventText.classList.add("hud-event-visible");
-      eventTimer = window.setTimeout(() => {
-        eventText.classList.remove("hud-event-visible");
-      }, 1600);
+    flashUnitDamage() {
+      units.classList.remove("hud-units-hit");
+      void units.offsetWidth;
+      units.classList.add("hud-units-hit");
     },
 
-    showResult(runResult: RunResult) {
+    showResult(runResult: RunResult, actionLabel = "Fly Again") {
       hud.classList.remove("hud-visible");
       result.classList.add("screen-visible");
-      resultMark.textContent = runResult.status === "arrived" ? "Arrived" : "Limped Home";
-      resultTitle.textContent = runResult.status === "arrived" ? "Destination Reached" : "Ship Still Technically Exists";
+      const stabilisedUnits = runResult.status === "complete" ? convertRunnerSpheresToStrategicUnits(runResult.finalUnits) : 0;
+      resultMark.textContent = runResult.status === "complete" ? "Escaped" : "Game Over";
+      resultTitle.textContent = runResult.status === "complete" ? "Wormhole Escape" : "Game Over";
       resultCopy.textContent = runResult.message;
-      resultRewards.innerHTML = [
-        reward("Coins", `+${runResult.coins}`),
-        reward("Distance", `${Math.floor((runResult.distance / 1200) * 100)}%`),
-        reward("Finds", runResult.artefacts.length || (runResult.consolation ? "Pity sticker" : "None"))
-      ].join("");
+      resultRewards.replaceChildren(
+        reward("Distance", `${runResult.distance}m`),
+        reward("Swarm", runResult.finalUnits),
+        reward("Stabilised", stabilisedUnits)
+      );
+      retryButton.textContent = actionLabel;
     }
   };
 }
 
-function stat(label: string, value: string | number) {
-  return `<div class="profile-stat"><span>${label}</span><strong>${value}</strong></div>`;
-}
-
 function reward(label: string, value: string | number) {
-  return `<div class="reward-stat"><span>${label}</span><strong>${value}</strong></div>`;
+  const container = document.createElement("div");
+  const labelElement = document.createElement("span");
+  const valueElement = document.createElement("strong");
+
+  container.className = "reward-stat";
+  labelElement.textContent = label;
+  valueElement.textContent = String(value);
+  container.append(labelElement, valueElement);
+
+  return container;
 }

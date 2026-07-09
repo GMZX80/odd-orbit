@@ -8,12 +8,14 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview --host 0.0.0.0",
+    "smoke": "bash scripts/smoke-test.sh",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "phaser": "^3.90.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "rollup": "npm:@rollup/wasm-node@^4.60.3",
     "typescript": "^5.9.3",
     "vite": "^7.1.12"
