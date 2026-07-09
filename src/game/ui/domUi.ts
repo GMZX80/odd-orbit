@@ -17,6 +17,10 @@ export function createDomUi() {
   const retryButton = getElement<HTMLButtonElement>("retry-run");
   const units = getElement<HTMLElement>("hud-units");
   const distance = getElement<HTMLElement>("hud-distance");
+  const lane = getElement<HTMLElement>("hud-lane");
+  const route = getElement<HTMLElement>("hud-route");
+  const stability = getElement<HTMLElement>("hud-stability");
+  const objective = getElement<HTMLElement>("hud-objective");
   const resultMark = getElement<HTMLElement>("result-mark");
   const resultTitle = getElement<HTMLElement>("result-title");
   const resultCopy = getElement<HTMLElement>("result-copy");
@@ -46,6 +50,10 @@ export function createDomUi() {
     renderHud(snapshot: RunStateSnapshot) {
       units.textContent = `Units: ${snapshot.units}`;
       distance.textContent = `Distance: ${snapshot.distance}m`;
+      lane.textContent = `Lane: ${snapshot.selectedLaneName}`;
+      route.textContent = `Route: ${snapshot.routeChargePercent}%`;
+      stability.textContent = `Stable: ${snapshot.stabilityPercent}%`;
+      objective.textContent = snapshot.objective;
     },
 
     flashUnitDamage() {

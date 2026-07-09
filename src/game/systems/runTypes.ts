@@ -4,6 +4,11 @@ export interface RunStateSnapshot {
   units: number;
   distance: number;
   distanceGoal: number;
+  selectedLane: number;
+  selectedLaneName: string;
+  objective: string;
+  routeChargePercent: number;
+  stabilityPercent: number;
 }
 
 export interface RunResult extends WormholeRunResult {

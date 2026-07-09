@@ -53,6 +53,7 @@ export class TravelScene extends Phaser.Scene {
   private ending = false;
   private escaping = false;
   private collapsing = false;
+  private escapeReadyShown = false;
   private startingUnits = 1;
   private runInput?: WormholeRunInput;
   private enemyTheme: RouteEnemyTheme = routeEnemyThemeForFaction("neutral");
@@ -109,6 +110,7 @@ export class TravelScene extends Phaser.Scene {
     this.distance = 0;
     this.runStartedAtMs = this.time.now;
     this.collapsing = false;
+    this.escapeReadyShown = false;
   }
 
   private clearRunObjects() {
@@ -418,6 +420,11 @@ export class TravelScene extends Phaser.Scene {
     this.wormhole.setTimerProgressRatio(this.timeRemainingRatio());
     this.wormhole.update(this.time.now, deltaSeconds);
 
+    if (!this.escapeReadyShown && (this.wormhole.state === "open" || this.wormhole.state === "descending")) {
+      this.escapeReadyShown = true;
+      this.createEscapeReadyFeedback();
+    }
+
     if (this.wormhole.state === "descending") {
       this.moveWormholeTowardPlayer(deltaSeconds);
       return;
@@ -712,10 +719,12 @@ export class TravelScene extends Phaser.Scene {
         continue;
       }
 
+      const previousUnits = this.player.units;
       const nextUnits = this.player.units + card.value;
       this.player.setUnits(this.distance < TRAVEL_RUN.distanceGoal ? Math.max(1, nextUnits) : nextUnits);
+      this.createCardCollectionFeedback(card.container.x, card.container.y, this.player.units - previousUnits, card.value);
       card.destroy();
-      this.cameras.main.shake(80, 0.004);
+      this.cameras.main.shake(card.value < 0 ? 110 : 70, card.value < 0 ? 0.005 : 0.003);
 
       if (this.player.units <= 0) {
         this.finishRun("game-over");
@@ -730,8 +739,42 @@ export class TravelScene extends Phaser.Scene {
     return {
       units: this.player?.units ?? 1,
       distance: Math.floor(this.distance),
-      distanceGoal: TRAVEL_RUN.distanceGoal
+      distanceGoal: TRAVEL_RUN.distanceGoal,
+      selectedLane: this.selectedLane,
+      selectedLaneName: this.selectedLaneName(),
+      objective: this.currentObjective(),
+      routeChargePercent: Math.round((this.wormhole?.chargeProgressRatio() ?? 0) * 100),
+      stabilityPercent: Math.round(this.timeRemainingRatio() * 100)
     };
+  }
+
+  private selectedLaneName() {
+    if (this.selectedLane === TRAVEL_LANES.left) {
+      return "Charge";
+    }
+    if (this.selectedLane === TRAVEL_LANES.card) {
+      return "Cards";
+    }
+    return "Blast";
+  }
+
+  private currentObjective() {
+    if (this.wormhole?.state === "open" || this.wormhole?.state === "descending" || this.wormhole?.state === "teleporting") {
+      return "Escape route open";
+    }
+    if (this.timeRemainingRatio() < 0.24) {
+      return "Route collapsing";
+    }
+    if ((this.wormhole?.chargeProgressRatio() ?? 0) >= 0.55) {
+      return "Keep charging";
+    }
+    if (this.selectedLane === TRAVEL_LANES.left) {
+      return "Charge the route";
+    }
+    if (this.selectedLane === TRAVEL_LANES.card) {
+      return "Risk cards for units";
+    }
+    return "Blast threats";
   }
 
   private timeRemainingRatio() {
@@ -1052,6 +1095,78 @@ export class TravelScene extends Phaser.Scene {
       alpha: 0,
       duration: 420,
       ease: "Sine.easeOut"
+    });
+  }
+
+  private createEscapeReadyFeedback() {
+    const x = this.wormhole?.container.x ?? travelLaneCenterX(TRAVEL_LANES.left, 360);
+    const y = (this.wormhole?.container.y ?? 360) + 70;
+    const callout = this.add
+      .text(x, y, "ESCAPE READY", {
+        color: "#b3fff3",
+        fontFamily: "Inter, sans-serif",
+        fontSize: "18px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setStroke("#062535", 6)
+      .setDepth(980);
+    const ring = this.add.circle(x, y - 70, 42, 0x65ffcb, 0.08).setStrokeStyle(4, 0xb3fff3, 0.72).setDepth(879);
+
+    this.distanceText?.setText("Escape route open").setAlpha(1);
+    this.cameras.main.shake(170, 0.004);
+    this.tweens.add({
+      targets: callout,
+      y: y - 28,
+      alpha: 0,
+      duration: 1200,
+      ease: "Cubic.easeOut",
+      onComplete: () => callout.destroy()
+    });
+    this.tweens.add({
+      targets: ring,
+      alpha: 0,
+      scale: 2.2,
+      duration: 520,
+      ease: "Quad.easeOut",
+      onComplete: () => ring.destroy()
+    });
+  }
+
+  private createCardCollectionFeedback(x: number, y: number, actualDelta: number, cardValue: number) {
+    const positive = actualDelta > 0;
+    const negative = actualDelta < 0 || cardValue < 0;
+    const color = positive ? 0x66f2a8 : negative ? 0xff6d75 : 0xd7dee8;
+    const textColor = positive ? "#b9ffe1" : negative ? "#ffb0b8" : "#f5f8ff";
+    const label = actualDelta > 0 ? `+${actualDelta}` : actualDelta < 0 ? String(actualDelta) : cardValue < 0 ? "Held" : "0";
+    const burst = this.add.circle(x, y, positive ? 15 : 12, color, positive ? 0.34 : 0.28);
+    const feedbackText = this.add
+      .text(x, y - 30, label, {
+        color: textColor,
+        fontFamily: "Inter, sans-serif",
+        fontSize: positive ? "28px" : "24px",
+        fontStyle: "900"
+      })
+      .setOrigin(0.5)
+      .setStroke("#06111c", 6)
+      .setDepth(982);
+
+    burst.setStrokeStyle(3, color, 0.78).setDepth(881);
+    this.tweens.add({
+      targets: burst,
+      alpha: 0,
+      scale: positive ? 2.7 : 2.15,
+      duration: positive ? 260 : 210,
+      ease: "Quad.easeOut",
+      onComplete: () => burst.destroy()
+    });
+    this.tweens.add({
+      targets: feedbackText,
+      y: feedbackText.y - 42,
+      alpha: 0,
+      duration: 620,
+      ease: "Cubic.easeOut",
+      onComplete: () => feedbackText.destroy()
     });
   }
 

@@ -22,7 +22,10 @@ Odd Orbit is currently focused on a small playable number-card runner slice.
 - Positive cards grow the visible player swarm
 - More units increase firepower, capped for readability
 - Minimal HUD: units and distance
+- Travel HUD now shows selected lane, route charge, route stability, and the current objective
+- In-world feedback calls out card gains/losses and when the wormhole escape route opens
 - Result screen with distance, final units, and retry
+- Smoke test support for the production preview via `npm run smoke`
 
 ## Commands
 
@@ -30,6 +33,7 @@ Odd Orbit is currently focused on a small playable number-card runner slice.
 npm install
 npm run dev
 npm run build
+npm run smoke
 ```
 
 In this local environment, npm was bootstrapped under `.tools/`, so the verified

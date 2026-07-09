@@ -190,10 +190,13 @@ p {
 
 .hud-meters {
   gap: 8px;
+  align-items: stretch;
+  flex-wrap: wrap;
 }
 
 .hud-meters span {
   flex: 1;
+  min-width: 104px;
   white-space: nowrap;
 }
 
@@ -233,6 +236,7 @@ p {
   color: #ffe66f;
   opacity: 0;
   transition: opacity 160ms ease;
+  text-transform: uppercase;
 }
 
 .hud-event-visible {

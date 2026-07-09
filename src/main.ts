@@ -57,7 +57,10 @@ ui.onRetry(() => {
 
 ui.showGalaxy();
 
-if (import.meta.env.MODE === "development" && new URLSearchParams(window.location.search).get("travel") === "1") {
+if (
+  (import.meta.env.MODE === "development" || new URLSearchParams(window.location.search).get("testHooks") === "1") &&
+  new URLSearchParams(window.location.search).get("travel") === "1"
+) {
   window.setTimeout(() => startRun(1), 1000);
 }
 
